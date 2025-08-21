@@ -1,0 +1,254 @@
+'''
+Description: Chat服务纯业务逻辑处理
+Author: zyq
+Date: 2025-01-21
+'''
+from typing import Dict, Any, AsyncGenerator, List
+from loguru import logger
+
+from core.config import load_llm_cfg
+from core.config.error_codes import COMMON_ERROR_REQUEST_PARSE_ERROR
+from core.exceptions import ValidationException, BaseBusinessException
+from .schemas import (
+    SingleTurnChatRequest, 
+    MultiTurnChatRequest, 
+    ChatResponse, 
+    StreamChatChunk,
+    MessageRole
+)
+from .adapters import ProtocolAdapterFactory, LLMProtocolAdapter
+
+
+class ChatHandlers:
+    """Chat服务纯业务逻辑处理器"""
+    
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.enabled_models = config.get('enabled_models', [])
+        self.rate_limits = config.get('rate_limits', {})
+        
+        # 加载LLM配置
+        self.llm_config = load_llm_cfg("openai")
+        self.models_info = {model.name: model for model in self.llm_config.models}
+        
+        # 协议适配器缓存
+        self._adapters = {}
+        
+        logger.info(f"Chat handlers initialized with models: {list(self.models_info.keys())}")
+    
+    async def initialize(self):
+        """初始化处理器"""
+        # 预初始化所有配置的模型适配器，但不进行健康检查
+        await self._initialize_adapters()
+        logger.info("Chat handlers初始化完成")
+    
+    async def _initialize_adapters(self):
+        """初始化协议适配器"""
+        for model_name, model_info in self.models_info.items():
+            if model_name in self.enabled_models:
+                try:
+                    # 根据配置中的provider字段确定协议类型
+                    protocol = self.llm_config.provider  # 'qwen'
+                    
+                    adapter = ProtocolAdapterFactory.create_adapter(
+                        protocol=protocol,
+                        model_config=model_info.dict(),
+                        timeout=self.llm_config.timeout
+                    )
+                    
+                    self._adapters[model_name] = adapter
+                    logger.info(f"Initialized {protocol} adapter for model: {model_name}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to initialize adapter for model {model_name}: {str(e)}")
+    
+    
+    def _validate_model(self, model: str):
+        """验证模型是否在配置中启用"""
+        if model not in self.enabled_models:
+            raise ValidationException(
+                f"模型 {model} 不可用。可用模型: {', '.join(self.enabled_models)}"
+            )
+    
+    def _validate_request_params(self, temperature: float = None, max_tokens: int = None):
+        """验证请求参数"""
+        if temperature is not None and not (0.0 <= temperature <= 2.0):
+            raise ValidationException("temperature 必须在 0.0 到 2.0 之间")
+        
+        if max_tokens is not None and not (1 <= max_tokens <= 8000):
+            raise ValidationException("max_tokens 必须在 1 到 8000 之间")
+    
+    def _get_adapter(self, model: str) -> LLMProtocolAdapter:
+        """获取模型对应的协议适配器"""
+        if model not in self._adapters:
+            raise ValidationException(f"模型 {model} 适配器未找到")
+        return self._adapters[model]
+    
+    def _build_messages(self, query: str, system_prompt: str = None, history: List = None) -> List[Dict[str, str]]:
+        """构建消息列表"""
+        messages = []
+        
+        if system_prompt:
+            messages.append({
+                'role': MessageRole.SYSTEM.value,
+                'content': system_prompt
+            })
+        
+        if history:
+            for msg in history:
+                messages.append({
+                    'role': msg.role,
+                    'content': msg.content
+                })
+        
+        messages.append({
+            'role': MessageRole.USER.value,
+            'content': query
+        })
+        
+        return messages
+    
+    async def single_turn_chat(self, request: SingleTurnChatRequest, trace_id: str = None) -> ChatResponse:
+        """单轮对话处理"""
+        logger.info(f"Single turn chat - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}...")
+        
+        try:
+            # 参数验证
+            self._validate_model(request.model)
+            self._validate_request_params(request.temperature, request.max_tokens)
+            
+            # 构建消息列表
+            messages = self._build_messages(
+                query=request.query,
+                system_prompt=request.system_prompt
+            )
+            
+            # 获取协议适配器并调用
+            adapter = self._get_adapter(request.model)
+            response = await adapter.chat_completion(
+                messages=messages,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens
+            )
+            
+            return response
+                
+        except Exception as e:
+            logger.error(f"Single turn chat failed - TraceID: {trace_id} | Error: {str(e)}")
+            if isinstance(e, (ValidationException, BaseBusinessException)):
+                raise
+            else:
+                raise BaseBusinessException(
+                    code=COMMON_ERROR_REQUEST_PARSE_ERROR,
+                    message=f"单轮对话处理失败: {str(e)}"
+                )
+    
+    async def multi_turn_chat(self, request: MultiTurnChatRequest, trace_id: str = None) -> ChatResponse:
+        """多轮对话处理"""
+        logger.info(f"Multi turn chat - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}... | History count: {len(request.history)}")
+        
+        try:
+            # 参数验证
+            self._validate_model(request.model)
+            self._validate_request_params(request.temperature, request.max_tokens)
+            
+            # 构建完整的对话历史
+            messages = self._build_messages(
+                query=request.query,
+                system_prompt=request.system_prompt,
+                history=request.history
+            )
+            
+            # 获取协议适配器并调用
+            adapter = self._get_adapter(request.model)
+            response = await adapter.chat_completion(
+                messages=messages,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens
+            )
+            
+            return response
+                
+        except Exception as e:
+            logger.error(f"Multi turn chat failed - TraceID: {trace_id} | Error: {str(e)}")
+            if isinstance(e, (ValidationException, BaseBusinessException)):
+                raise
+            else:
+                raise BaseBusinessException(
+                    code=COMMON_ERROR_REQUEST_PARSE_ERROR,
+                    message=f"多轮对话处理失败: {str(e)}"
+                )
+    
+    async def single_turn_chat_stream(self, request: SingleTurnChatRequest, trace_id: str = None) -> AsyncGenerator[StreamChatChunk, None]:
+        """单轮对话流式处理"""
+        logger.info(f"Single turn chat stream - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}...")
+        
+        try:
+            # 参数验证
+            self._validate_model(request.model)
+            self._validate_request_params(request.temperature, request.max_tokens)
+            
+            # 构建消息列表
+            messages = self._build_messages(
+                query=request.query,
+                system_prompt=request.system_prompt
+            )
+            
+            # 获取协议适配器并调用
+            adapter = self._get_adapter(request.model)
+            async for chunk in adapter.chat_completion_stream(
+                messages=messages,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens
+            ):
+                yield chunk
+                
+        except Exception as e:
+            logger.error(f"Single turn chat stream failed - TraceID: {trace_id} | Error: {str(e)}")
+            if isinstance(e, (ValidationException, BaseBusinessException)):
+                raise
+            else:
+                raise BaseBusinessException(
+                    code=COMMON_ERROR_REQUEST_PARSE_ERROR,
+                    message=f"单轮流式对话处理失败: {str(e)}"
+                )
+    
+    async def multi_turn_chat_stream(self, request: MultiTurnChatRequest, trace_id: str = None) -> AsyncGenerator[StreamChatChunk, None]:
+        """多轮对话流式处理"""
+        logger.info(f"Multi turn chat stream - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}... | History count: {len(request.history)}")
+        
+        try:
+            # 参数验证
+            self._validate_model(request.model)
+            self._validate_request_params(request.temperature, request.max_tokens)
+            
+            # 构建完整的对话历史
+            messages = self._build_messages(
+                query=request.query,
+                system_prompt=request.system_prompt,
+                history=request.history
+            )
+            
+            # 获取协议适配器并调用
+            adapter = self._get_adapter(request.model)
+            async for chunk in adapter.chat_completion_stream(
+                messages=messages,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens
+            ):
+                yield chunk
+                
+        except Exception as e:
+            logger.error(f"Multi turn chat stream failed - TraceID: {trace_id} | Error: {str(e)}")
+            if isinstance(e, (ValidationException, BaseBusinessException)):
+                raise
+            else:
+                raise BaseBusinessException(
+                    code=COMMON_ERROR_REQUEST_PARSE_ERROR,
+                    message=f"多轮流式对话处理失败: {str(e)}"
+                )
+    
+    def get_enabled_models(self) -> List[str]:
+        """获取启用的模型列表"""
+        return self.enabled_models.copy()
+    

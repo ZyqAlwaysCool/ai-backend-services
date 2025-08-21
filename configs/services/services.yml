@@ -1,0 +1,63 @@
+# AI服务配置 - 只管理业务逻辑配置
+services:
+  # 启用的服务模块
+  enabled:
+    - chat
+    - document
+    - retrieval
+    # - multimodal  # 暂未启用
+
+  # Chat服务配置 - 提供对话相关接口
+  chat:
+    enabled: true
+    version: "1.0.0"
+    # 启用的端点
+    endpoints:
+      chat_completion: true      # 非流式对话
+      chat_completion_stream: true  # 流式对话
+      single_turn_chat: true     # 单轮对话
+      multi_turn_chat: true      # 多轮对话
+    # 引用的模型名称（具体配置在 llm_providers 中）
+    enabled_models:
+      - qwen3-32B
+      - qwen3-14B
+    # 业务限流配置
+    rate_limits:
+      chat_completion: 1000      # 每小时请求限制
+      chat_completion_stream: 800  # 流式对话限制更严格
+
+  # 文档处理服务配置
+  document:
+    enabled: true
+    version: "1.0.0"
+    endpoints:
+      parse_document: true
+      convert_format: true
+      extract_content: true
+    supported_formats:
+      - pdf
+      - docx
+      - txt
+      - markdown
+    max_file_size: 52428800  # 50MB
+
+  # 知识检索服务配置
+  retrieval:
+    enabled: true
+    version: "1.0.0"
+    endpoints:
+      build_knowledge_base: true
+      vector_search: true
+      hybrid_search: true
+      qa_retrieval: true
+    vector_dimensions: 1536
+    max_results: 100
+
+  # 多模态服务配置（暂未启用）
+  multimodal:
+    enabled: false
+    version: "1.0.0"
+    endpoints:
+      image_analysis: true
+      image_to_text: true
+      audio_processing: false

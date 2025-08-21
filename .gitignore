@@ -1,0 +1,7 @@
+__pycache__/
+deploy_docker/
+resources/
+logs/
+datasets/
+tests/
+deploy/
