@@ -7,13 +7,11 @@
 ### 🚀 核心优势
 
 - **统一服务平台**：多个AI服务统一部署管理，单一入口
-- **快速启动**：移除启动时健康检查，1秒内完成服务初始化
 - **配置驱动**：YAML配置控制服务启用状态和行为
 - **服务注册机制**：自动发现和注册符合规范的AI服务
-- **协议适配器模式**：支持多种LLM协议（OpenAI、Qwen、DeepSeek等）
+- **协议适配器模式**：支持多种LLM协议（OpenAI、Gemini等）
 - **统一响应格式**：BaseResponse标准化所有API响应
 - **请求链路追踪**：全链路trace_id支持问题定位
-- **懒加载设计**：配置错误在实际调用时报错，不阻塞启动
 
 ## 🏗️ 架构设计
 
@@ -444,32 +442,7 @@ ProtocolAdapterFactory.register_adapter('your_protocol', YourProtocolAdapter)
 
 ## 🚀 部署指南
 
-### Docker部署
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY . .
-EXPOSE 19999
-
-CMD ["python", "app.py"]
-```
-
-### 生产环境配置
-
-```yaml
-# configs/app.yml
-log_level: INFO
-log_retention: "7 days"
-
-# 环境变量覆盖
-export LOG_LEVEL=WARNING
-export MONGO_HOST=production-mongo-host
-```
+### Docker部署(TODO)
 
 ## 📊 监控和运维
 
@@ -481,19 +454,6 @@ export MONGO_HOST=production-mongo-host
 - 结构化日志输出
 - 全链路trace_id追踪
 - 请求处理时间统计
-
-### 性能监控
-- 启动时间优化：1秒内完成初始化
-- 懒加载设计：避免启动时耗时操作
-- 内存占用监控
-
-## 🤝 贡献指南
-
-1. Fork项目
-2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 开启Pull Request
 
 ### 开发规范
 - 遵循现有的架构模式
@@ -517,16 +477,3 @@ export MONGO_HOST=production-mongo-host
 - 🔄 Document服务 (PDF/Word处理)
 - 🔄 Retrieval服务 (向量检索)
 - 🔄 Multimodal服务 (图像/音频处理)
-- 🔄 监控面板和metrics
-- 🔄 配置管理界面
-
-## 📞 技术支持
-
-如有问题或建议，请：
-1. 查看项目文档和示例代码
-2. 提交Issue描述问题
-3. 参与Discussion讨论
-
----
-
-**AI服务平台** - 让AI服务开发更简单、更统一、更高效！ 🚀
