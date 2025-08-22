@@ -17,7 +17,7 @@ from loguru import logger
 
 class MongoStorage:
     def __init__(self, db_name: str = "mongo_storage_default_database", collection_name: str = "mongo_storage_default_collection"):
-        cfg_path = Path(__file__).resolve().parent.parent.parent / "configs" / "app.yml"
+        cfg_path = Path(__file__).resolve().parent.parent.parent / "configs" / "app" / "app.yml"
         mongo_cfg  = yaml.safe_load(open(cfg_path, encoding="utf-8")).get("mongo", {})
         mg_host = os.getenv("MONGO_HOST") or mongo_cfg.get("host", "localhost")
         mg_port = os.getenv("MONGO_PORT") or mongo_cfg.get("port", 27017)

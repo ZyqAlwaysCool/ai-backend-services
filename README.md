@@ -142,7 +142,41 @@ services:
       - qwen3-14B
 ```
 
-### 3. 启动服务
+### 3. 创建认证用户
+
+平台采用JWT Token认证机制，需要先创建认证用户：
+
+```bash
+# 创建认证用户（使用basic权限模板）
+python scripts/create_auth_user.py create <业务名称> --template basic
+
+# 创建认证用户（使用admin权限模板）  
+python scripts/create_auth_user.py create <业务名称> --template admin
+
+# 创建认证用户（自定义权限）
+python scripts/create_auth_user.py create <业务名称> --permissions chat.single_turn chat.multi_turn
+
+# 查看所有认证用户
+python scripts/create_auth_user.py list
+```
+
+**权限模板说明：**
+- `basic`: 基础权限，包含单轮和多轮对话权限
+- `admin`: 管理员权限，包含所有可用权限
+
+**示例：**
+```bash
+# 为test_business创建基础权限用户
+python scripts/create_auth_user.py create test_business --template basic
+
+# 输出示例：
+# ✅ 认证用户创建成功!
+# 👤 用户名: test_business_auth_user
+# 🔑 密码: 4yoVnMxHnLxNs2PZsUhJ1w
+# 📜 权限列表: chat.single_turn, chat.multi_turn
+```
+
+### 4. 启动服务
 
 ```bash
 python app.py
@@ -152,6 +186,22 @@ python app.py
 - **API文档**: http://localhost:19999/docs
 - **健康检查**: http://localhost:19999/health
 - **服务列表**: http://localhost:19999/services
+
+### 5. 使用认证
+
+```bash
+# 1. 登录获取token
+curl -X POST http://localhost:19999/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "test_business_auth_user", "password": "4yoVnMxHnLxNs2PZsUhJ1w"}'
+
+# 2. 使用token访问受保护的API
+curl -X GET http://localhost:19999/services \
+  -H "Authorization: Bearer <返回的access_token>"
+```
+
+**Swagger UI认证：**
+在API文档页面点击右上角"Authorize"按钮，输入JWT token即可测试所有接口。
 
 ## 📋 开发指南
 

@@ -46,6 +46,9 @@ class AppConfig(BaseModel):
     log_retention: str = Field("30 days", description="日志保留时间")
     mongo_host: str = Field("127.0.0.1", description="MongoDB主机")
     mongo_port: int = Field(27017, description="MongoDB端口", ge=1, le=65535)
+    mongo_database: str = Field("ai_backend_services", description="MongoDB数据库名")
+    jwt_secret_key: str = Field(..., description="JWT密钥", min_length=32)
+    token_expire_hours: int = Field(24, description="Token过期时间(小时)", ge=1, le=168)
     
     class Config:
         frozen = True
@@ -101,13 +104,24 @@ def load_app_config() -> AppConfig:
             mongo_config = raw_config['mongo']
             config_dict.update({
                 'mongo_host': mongo_config.get('host', '127.0.0.1'),
-                'mongo_port': mongo_config.get('port', 27017)
+                'mongo_port': mongo_config.get('port', 27017),
+                'mongo_database': mongo_config.get('database', 'ai_backend_services')
+            })
+        
+        if 'auth' in raw_config:
+            auth_config = raw_config['auth']
+            config_dict.update({
+                'jwt_secret_key': auth_config.get('jwt_secret_key'),
+                'token_expire_hours': auth_config.get('token_expire_hours', 24)
             })
         
         # 支持环境变量覆盖
         config_dict['mongo_host'] = os.getenv('MONGO_HOST', config_dict.get('mongo_host', '127.0.0.1'))
         config_dict['mongo_port'] = int(os.getenv('MONGO_PORT', config_dict.get('mongo_port', 27017)))
+        config_dict['mongo_database'] = os.getenv('MONGO_DATABASE', config_dict.get('mongo_database', 'ai_backend_services'))
         config_dict['log_level'] = os.getenv('LOG_LEVEL', config_dict.get('log_level', 'INFO'))
+        config_dict['jwt_secret_key'] = os.getenv('JWT_SECRET_KEY', config_dict.get('jwt_secret_key'))
+        config_dict['token_expire_hours'] = int(os.getenv('TOKEN_EXPIRE_HOURS', config_dict.get('token_expire_hours', 24)))
         
         return AppConfig(**config_dict)
     except Exception as e:

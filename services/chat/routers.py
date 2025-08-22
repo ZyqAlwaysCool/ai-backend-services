@@ -38,7 +38,7 @@ async def _stream_wrapper(generator, trace_id: str):
 
 @chat_router.post("/single_turn_chat", response_model=BaseResponse)
 async def single_turn_chat(request: SingleTurnChatRequest, http_request: Request):
-    """单轮对话接口"""
+    """单轮对话接口（非流式响应）"""
     trace_id = str(uuid.uuid4())
     logger.info(f"Received single turn chat request - TraceID: {trace_id}")
     
@@ -86,7 +86,7 @@ async def single_turn_chat(request: SingleTurnChatRequest, http_request: Request
 
 @chat_router.post("/multi_turn_chat", response_model=BaseResponse)
 async def multi_turn_chat(request: MultiTurnChatRequest, http_request: Request):
-    """多轮对话接口"""
+    """多轮对话接口（非流式响应）"""
     trace_id = str(uuid.uuid4())
     logger.info(f"Received multi turn chat request - TraceID: {trace_id}")
     
@@ -134,7 +134,7 @@ async def multi_turn_chat(request: MultiTurnChatRequest, http_request: Request):
 
 @chat_router.post("/single_turn_chat_stream")
 async def single_turn_chat_stream(request: SingleTurnChatRequest, http_request: Request):
-    """单轮对话流式接口"""
+    """单轮对话接口（流式响应）"""
     trace_id = str(uuid.uuid4())
     logger.info(f"Received single turn chat stream request - TraceID: {trace_id}")
     
@@ -201,7 +201,7 @@ async def single_turn_chat_stream(request: SingleTurnChatRequest, http_request: 
 
 @chat_router.post("/multi_turn_chat_stream")
 async def multi_turn_chat_stream(request: MultiTurnChatRequest, http_request: Request):
-    """多轮对话流式接口"""
+    """多轮对话接口（流式响应）"""
     trace_id = str(uuid.uuid4())
     logger.info(f"Received multi turn chat stream request - TraceID: {trace_id}")
     

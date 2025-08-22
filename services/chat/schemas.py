@@ -31,7 +31,6 @@ class SingleTurnChatRequest(BaseModel):
     system_prompt: Optional[str] = Field(None, description="系统提示词")
     temperature: Optional[float] = Field(0.7, description="温度参数", ge=0.0, le=2.0)
     max_tokens: Optional[int] = Field(2000, description="最大生成token数", ge=1, le=8000)
-    stream: Optional[bool] = Field(False, description="是否流式响应")
 
 
 class MultiTurnChatRequest(BaseModel):
@@ -42,7 +41,6 @@ class MultiTurnChatRequest(BaseModel):
     system_prompt: Optional[str] = Field(None, description="系统提示词")
     temperature: Optional[float] = Field(0.7, description="温度参数", ge=0.0, le=2.0)
     max_tokens: Optional[int] = Field(2000, description="最大生成token数", ge=1, le=8000)
-    stream: Optional[bool] = Field(False, description="是否流式响应")
 
 
 class ChatResponse(BaseModel):

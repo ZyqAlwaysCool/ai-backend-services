@@ -1,9 +1,9 @@
 '''
-Description: 中间件集合，包含请求追踪、日志记录等
+Description: 基础中间件, 包含请求追踪、日志记录
 Author: zyq
 Date: 2025-08-13 14:35:00
 LastEditors: zyq
-LastEditTime: 2025-08-13 14:35:00
+LastEditTime: 2025-08-22 11:49:28
 '''
 import time
 import uuid

@@ -10,10 +10,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.logging import setup_logger
-from core.config import validate_config_on_startup, get_app_config
+from core.config import validate_config_on_startup, get_app_config, load_app_config
 from core.exceptions import global_exception_handler, business_exception_handler, BaseBusinessException
-from core.middleware import RequestTraceMiddleware, RequestLoggingMiddleware
+from core.middleware import RequestTraceMiddleware, RequestLoggingMiddleware, AuthMiddleware
 from core.schemas import BaseResponse
+from core.storage.mongo_storage import MongoStorage
+from core.auth.auth_service import AuthService
+from core.auth.user_storage import AuthUserStorage
+from core.auth.auth_router import auth_router, set_auth_service
 from services.registry import service_registry
 
 # 设置日志
@@ -29,6 +33,29 @@ async def lifespan(app: FastAPI):
     # 启动时配置验证
     if not validate_config_on_startup():
         logger.error("配置验证失败，应用启动中止")
+        raise SystemExit(1)
+    
+    # 初始化认证服务
+    try:
+        app_config = load_app_config()
+        mongo_storage = MongoStorage(
+            db_name=app_config.mongo_database
+        )
+        
+        user_storage = AuthUserStorage(mongo_storage)
+        auth_service = AuthService(
+            secret_key=app_config.jwt_secret_key,
+            token_expire_hours=app_config.token_expire_hours
+        )
+        auth_service.set_user_storage(user_storage)
+        
+        # 注入到路由模块
+        set_auth_service(auth_service)
+        
+        logger.info("认证服务初始化成功")
+        
+    except Exception as e:
+        logger.error(f"认证服务初始化失败: {str(e)}")
         raise SystemExit(1)
     
     # 发现并注册所有启用的服务
@@ -52,6 +79,14 @@ async def lifespan(app: FastAPI):
         
         # 将服务注册器存储到app状态中，供路由访问
         app.state.service_registry = service_registry
+        
+        # 注册认证路由
+        app.include_router(auth_router)
+        logger.info("认证路由注册成功")
+        
+        # 将认证服务存储到app状态供中间件使用
+        app.state.auth_service = auth_service
+        logger.info("认证服务已存储到app状态")
         
     except Exception as e:
         logger.error(f"服务初始化失败: {str(e)}")
@@ -77,12 +112,63 @@ app = FastAPI(
     title="AI服务平台",
     version="1.0.0",
     description="通用AI能力集服务平台 - 提供Chat、文档处理、知识检索等服务",
-    lifespan=lifespan
+    lifespan=lifespan,
+    # 配置Swagger UI的认证支持
+    openapi_tags=[
+        {"name": "认证", "description": "用户认证相关接口"},
+        {"name": "服务", "description": "AI服务相关接口"}
+    ]
 )
+
+# 添加Bearer token认证到OpenAPI schema
+from fastapi.openapi.utils import get_openapi
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    # 添加Bearer token认证支持
+    openapi_schema["components"]["securitySchemes"] = {
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "输入JWT token（不需要'Bearer '前缀）"
+        }
+    }
+    
+    # 定义不需要认证的路径
+    public_paths = {
+        "/auth/login",
+        "/auth/verify", 
+        "/health",
+        "/",
+        "/docs",
+        "/openapi.json",
+        "/redoc"
+    }
+    
+    # 为所有需要认证的接口添加安全要求
+    for path, methods in openapi_schema["paths"].items():
+        if path not in public_paths:
+            for method, details in methods.items():
+                if method in ["get", "post", "put", "delete", "patch"]:
+                    details["security"] = [{"BearerAuth": []}]
+    
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 # 添加中间件（注意顺序）
 app.add_middleware(RequestTraceMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(AuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
