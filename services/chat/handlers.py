@@ -10,8 +10,7 @@ from core.config import load_llm_cfg
 from core.config.error_codes import COMMON_ERROR_REQUEST_PARSE_ERROR
 from core.exceptions import ValidationException, BaseBusinessException
 from .schemas import (
-    SingleTurnChatRequest, 
-    MultiTurnChatRequest, 
+    ChatRequest,
     ChatResponse, 
     StreamChatChunk,
     MessageRole
@@ -108,9 +107,13 @@ class ChatHandlers:
         
         return messages
     
-    async def single_turn_chat(self, request: SingleTurnChatRequest, trace_id: str = None) -> ChatResponse:
-        """单轮对话处理"""
-        logger.info(f"Single turn chat - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}...")
+    async def chat(self, request: ChatRequest, trace_id: str = None) -> ChatResponse:
+        """统一对话处理（单轮/多轮由history字段判断）"""
+        is_multi_turn = len(request.history) > 0
+        conversation_type = "多轮" if is_multi_turn else "单轮"
+        
+        logger.info(f"{conversation_type}对话 - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}..." + 
+                   (f" | History count: {len(request.history)}" if is_multi_turn else ""))
         
         try:
             # 参数验证
@@ -120,7 +123,8 @@ class ChatHandlers:
             # 构建消息列表
             messages = self._build_messages(
                 query=request.query,
-                system_prompt=request.system_prompt
+                system_prompt=request.system_prompt,
+                history=request.history if is_multi_turn else None
             )
             
             # 获取协议适配器并调用
@@ -134,54 +138,22 @@ class ChatHandlers:
             return response
                 
         except Exception as e:
-            logger.error(f"Single turn chat failed - TraceID: {trace_id} | Error: {str(e)}")
+            logger.error(f"{conversation_type}对话失败 - TraceID: {trace_id} | Error: {str(e)}")
             if isinstance(e, (ValidationException, BaseBusinessException)):
                 raise
             else:
                 raise BaseBusinessException(
                     code=COMMON_ERROR_REQUEST_PARSE_ERROR,
-                    message=f"单轮对话处理失败: {str(e)}"
+                    message=f"{conversation_type}对话处理失败: {str(e)}"
                 )
     
-    async def multi_turn_chat(self, request: MultiTurnChatRequest, trace_id: str = None) -> ChatResponse:
-        """多轮对话处理"""
-        logger.info(f"Multi turn chat - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}... | History count: {len(request.history)}")
+    async def chat_stream(self, request: ChatRequest, trace_id: str = None) -> AsyncGenerator[StreamChatChunk, None]:
+        """统一流式对话处理（单轮/多轮由history字段判断）"""
+        is_multi_turn = len(request.history) > 0
+        conversation_type = "多轮" if is_multi_turn else "单轮"
         
-        try:
-            # 参数验证
-            self._validate_model(request.model)
-            self._validate_request_params(request.temperature, request.max_tokens)
-            
-            # 构建完整的对话历史
-            messages = self._build_messages(
-                query=request.query,
-                system_prompt=request.system_prompt,
-                history=request.history
-            )
-            
-            # 获取协议适配器并调用
-            adapter = self._get_adapter(request.model)
-            response = await adapter.chat_completion(
-                messages=messages,
-                temperature=request.temperature,
-                max_tokens=request.max_tokens
-            )
-            
-            return response
-                
-        except Exception as e:
-            logger.error(f"Multi turn chat failed - TraceID: {trace_id} | Error: {str(e)}")
-            if isinstance(e, (ValidationException, BaseBusinessException)):
-                raise
-            else:
-                raise BaseBusinessException(
-                    code=COMMON_ERROR_REQUEST_PARSE_ERROR,
-                    message=f"多轮对话处理失败: {str(e)}"
-                )
-    
-    async def single_turn_chat_stream(self, request: SingleTurnChatRequest, trace_id: str = None) -> AsyncGenerator[StreamChatChunk, None]:
-        """单轮对话流式处理"""
-        logger.info(f"Single turn chat stream - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}...")
+        logger.info(f"{conversation_type}流式对话 - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}..." + 
+                   (f" | History count: {len(request.history)}" if is_multi_turn else ""))
         
         try:
             # 参数验证
@@ -191,42 +163,8 @@ class ChatHandlers:
             # 构建消息列表
             messages = self._build_messages(
                 query=request.query,
-                system_prompt=request.system_prompt
-            )
-            
-            # 获取协议适配器并调用
-            adapter = self._get_adapter(request.model)
-            async for chunk in adapter.chat_completion_stream(
-                messages=messages,
-                temperature=request.temperature,
-                max_tokens=request.max_tokens
-            ):
-                yield chunk
-                
-        except Exception as e:
-            logger.error(f"Single turn chat stream failed - TraceID: {trace_id} | Error: {str(e)}")
-            if isinstance(e, (ValidationException, BaseBusinessException)):
-                raise
-            else:
-                raise BaseBusinessException(
-                    code=COMMON_ERROR_REQUEST_PARSE_ERROR,
-                    message=f"单轮流式对话处理失败: {str(e)}"
-                )
-    
-    async def multi_turn_chat_stream(self, request: MultiTurnChatRequest, trace_id: str = None) -> AsyncGenerator[StreamChatChunk, None]:
-        """多轮对话流式处理"""
-        logger.info(f"Multi turn chat stream - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}... | History count: {len(request.history)}")
-        
-        try:
-            # 参数验证
-            self._validate_model(request.model)
-            self._validate_request_params(request.temperature, request.max_tokens)
-            
-            # 构建完整的对话历史
-            messages = self._build_messages(
-                query=request.query,
                 system_prompt=request.system_prompt,
-                history=request.history
+                history=request.history if is_multi_turn else None
             )
             
             # 获取协议适配器并调用
@@ -239,16 +177,15 @@ class ChatHandlers:
                 yield chunk
                 
         except Exception as e:
-            logger.error(f"Multi turn chat stream failed - TraceID: {trace_id} | Error: {str(e)}")
+            logger.error(f"{conversation_type}流式对话失败 - TraceID: {trace_id} | Error: {str(e)}")
             if isinstance(e, (ValidationException, BaseBusinessException)):
                 raise
             else:
                 raise BaseBusinessException(
                     code=COMMON_ERROR_REQUEST_PARSE_ERROR,
-                    message=f"多轮流式对话处理失败: {str(e)}"
+                    message=f"{conversation_type}流式对话处理失败: {str(e)}"
                 )
     
     def get_enabled_models(self) -> List[str]:
         """获取启用的模型列表"""
         return self.enabled_models.copy()
-    

@@ -4,7 +4,7 @@ services:
   enabled:
     - chat
     - document
-    - retrieval
+    # - retrieval
     # - multimodal  # 暂未启用
 
   # Chat服务配置 - 提供对话相关接口
@@ -13,10 +13,8 @@ services:
     version: "1.0.0"
     # 启用的端点
     endpoints:
-      chat_completion: true      # 非流式对话
-      chat_completion_stream: true  # 流式对话
-      single_turn_chat: true     # 单轮对话
-      multi_turn_chat: true      # 多轮对话
+      chat: true      # 非流式对话
+      chat_stream: true  # 流式对话
     # 引用的模型名称（具体配置在 llm_providers 中）
     enabled_models:
       - qwen3-32B

@@ -24,19 +24,10 @@ class ChatMessage(BaseModel):
         use_enum_values = True
 
 
-class SingleTurnChatRequest(BaseModel):
-    """单轮对话请求模型"""
-    query: str = Field(..., description="用户问题", min_length=1)
-    model: str = Field("qwen3-32B", description="使用的模型名称")
-    system_prompt: Optional[str] = Field(None, description="系统提示词")
-    temperature: Optional[float] = Field(0.7, description="温度参数", ge=0.0, le=2.0)
-    max_tokens: Optional[int] = Field(2000, description="最大生成token数", ge=1, le=8000)
-
-
-class MultiTurnChatRequest(BaseModel):
-    """多轮对话请求模型"""
+class ChatRequest(BaseModel):
+    """对话请求模型（统一单轮/多轮）"""
     query: str = Field(..., description="当前用户问题", min_length=1)
-    history: List[ChatMessage] = Field(default=[], description="历史对话记录")
+    history: List[ChatMessage] = Field(default=[], description="历史对话记录（为空则为单轮对话）")
     model: str = Field("qwen3-32B", description="使用的模型名称")
     system_prompt: Optional[str] = Field(None, description="系统提示词")
     temperature: Optional[float] = Field(0.7, description="温度参数", ge=0.0, le=2.0)

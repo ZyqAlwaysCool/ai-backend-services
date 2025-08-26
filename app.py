@@ -13,6 +13,7 @@ from core.logging import setup_logger
 from core.config import validate_config_on_startup, get_app_config, load_app_config
 from core.exceptions import global_exception_handler, business_exception_handler, BaseBusinessException
 from core.middleware import RequestTraceMiddleware, RequestLoggingMiddleware, AuthMiddleware
+from core.middleware.file_input import FileInputMiddleware
 from core.schemas import BaseResponse
 from core.storage.mongo_storage import MongoStorage
 from core.auth.auth_service import AuthService
@@ -70,8 +71,7 @@ async def lifespan(app: FastAPI):
             if router and router.routes:  # 只添加非空路由
                 app.include_router(
                     router, 
-                    prefix=f"/{service_name}",
-                    tags=[service_name]
+                    prefix=f"/{service_name}"
                 )
         
         enabled_service_count = len(service_registry.get_enabled_services())
@@ -165,10 +165,11 @@ def custom_openapi():
 
 app.openapi = custom_openapi
 
-# 添加中间件（注意顺序）
-app.add_middleware(RequestTraceMiddleware)
-app.add_middleware(RequestLoggingMiddleware)
+# 添加中间件（注意顺序 - 后添加的先执行）
+app.add_middleware(FileInputMiddleware)  # 文件输入处理中间件
 app.add_middleware(AuthMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(RequestTraceMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

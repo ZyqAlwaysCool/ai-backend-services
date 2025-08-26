@@ -7,41 +7,54 @@
 ### 🚀 核心优势
 
 - **统一服务平台**：多个AI服务统一部署管理，单一入口
+- **统一认证体系**：JWT Token认证，Swagger UI支持，权限细粒度控制
 - **配置驱动**：YAML配置控制服务启用状态和行为
 - **服务注册机制**：自动发现和注册符合规范的AI服务
 - **协议适配器模式**：支持多种LLM协议（OpenAI、Gemini等）
 - **统一响应格式**：BaseResponse标准化所有API响应
 - **请求链路追踪**：全链路trace_id支持问题定位
+- **智能中间件系统**：统一异常处理、文件上传、认证拦截
+- **文件处理能力**：支持multipart/form-data和base64两种文件上传方式
 
 ## 🏗️ 架构设计
 
 ### 整体架构图
 
 ```
-┌─────────────────────────────────────────┐
-│                App.py                   │  ← 应用入口 (FastAPI + Lifespan)
-│            (统一路由管理)                │
-├─────────────────────────────────────────┤
-│            Service Registry             │  ← 服务注册发现
-│         (自动发现和管理服务生命周期)      │
-├─────────────────────────────────────────┤
-│  Chat Service    │ Document Service    │  ← 业务服务层 (继承BaseService)
-│  (BaseService)   │  (BaseService)      │     • 单轮/多轮对话
-│     • qwen3-32B  │     • PDF解析       │     • 流式/非流式响应
-│     • qwen3-14B  │     • Word转换      │     • 协议适配器模式
-├─────────────────────────────────────────┤
-│    Router Layer   │   Schema Layer     │  ← 接口&数据层
-│  • 统一BaseResponse │ • Pydantic验证    │     • HTTP路由定义
-│  • 流式原始返回     │ • 类型安全        │     • 数据模型定义
-├─────────────────────────────────────────┤
-│   Handler Layer   │  Adapter Layer     │  ← 业务逻辑&协议适配
-│  • 纯业务逻辑      │ • OpenAI Protocol  │     • 与HTTP解耦
-│  • 参数验证        │ • 多模型支持       │     • 易于单元测试
-├─────────────────────────────────────────┤
-│              Core Modules               │  ← 核心基础设施
-│      (Config/Log/Exception/Middleware)  │     • 配置管理
-│                                         │     • 异常处理
-└─────────────────────────────────────────┘     • 中间件支持
+┌─────────────────────────────────────────────────────────────┐
+│                      App.py                                 │  ← 应用入口 (FastAPI + Lifespan)
+│                  (统一路由管理)                              │
+├─────────────────────────────────────────────────────────────┤
+│               Authentication Layer                          │  ← 统一认证层
+│  • JWT Token认证  • 中间件拦截  • Swagger UI支持            │     • Bearer Token验证
+│  • 用户权限管理  • MongoDB存储  • 脚本化用户创建            │     • 请求拦截保护
+├─────────────────────────────────────────────────────────────┤
+│                  Service Registry                           │  ← 服务注册发现
+│              (自动发现和管理服务生命周期)                    │
+├─────────────────────────────────────────────────────────────┤
+│    Chat Service      │  Document Service  │  Auth Service  │  ← 业务服务层 (继承BaseService)
+│   (BaseService)      │  (BaseService)     │  (认证服务)    │     • 单轮/多轮对话
+│   • qwen3-32B        │  • PDF解析         │  • 用户登录    │     • 流式/非流式响应
+│   • qwen3-14B        │  • Word转换        │  • Token验证   │     • 协议适配器模式
+├─────────────────────────────────────────────────────────────┤
+│      Router Layer       │     Schema Layer                 │  ← 接口&数据层
+│  • 统一BaseResponse     │  • Pydantic验证                  │     • HTTP路由定义
+│  • 流式原始返回         │  • 类型安全                      │     • 数据模型定义
+│  • 认证路由(/auth/*)   │  • 认证数据模型                  │     • JWT Payload验证
+├─────────────────────────────────────────────────────────────┤
+│     Handler Layer       │    Adapter Layer                 │  ← 业务逻辑&协议适配
+│  • 纯业务逻辑          │  • OpenAI Protocol               │     • 与HTTP解耦
+│  • 参数验证            │  • 多模型支持                    │     • 易于单元测试
+│  • 认证业务处理        │  • 用户存储适配                  │     • MongoDB适配
+├─────────────────────────────────────────────────────────────┤
+│                    Core Modules                             │  ← 核心基础设施
+│  (Config/Log/Exception/Middleware/Auth/Storage)             │     • 配置管理
+│                                                             │     • 全局异常处理
+└─────────────────────────────────────────────────────────────┘     • 智能中间件系统
+                                                                      • 文件处理中间件
+                                                                      • 认证中间件
+                                                                      • 请求追踪中间件
+                                                                      • 数据存储
 ```
 
 ### 设计模式说明
@@ -62,41 +75,41 @@
 - **Routers**: HTTP路由和响应格式化，统一BaseResponse
 - **Service**: 服务生命周期管理和路由注册
 
+#### 4. **统一认证模式 (Unified Authentication)**
+- **JWT Token**: 无状态认证，支持分布式部署
+- **中间件拦截**: 自动拦截请求验证，业务代码无感知
+- **权限控制**: 基于用户权限的细粒度访问控制
+- **脚本化管理**: 安全的用户创建和管理机制
+
+#### 5. **智能中间件系统 (Smart Middleware System)**
+- **统一异常处理**: 全局异常处理器统一转换为标准BaseResponse格式
+- **文件处理中间件**: 智能处理multipart/form-data和base64文件上传
+- **中间件执行顺序**: 洋葱模型，确保trace_id正确传播
+- **职责分离**: 中间件专注业务逻辑，异常处理器专注响应格式化
+
 ## 📂 目录结构
 
 ```
 ai-backend-services/
 ├── app.py                              # 🚀 应用入口 (FastAPI主应用)
 ├── 📁 core/                           # 🔧 核心基础设施
-│   ├── config/                        # 配置管理
-│   │   ├── config_center.py          # 配置加载和验证
-│   │   └── error_codes.py            # 统一错误码定义
-│   ├── logging/                       # 日志系统
-│   │   └── logger.py                 # 结构化日志配置
-│   ├── exceptions/                    # 异常处理
-│   │   └── exceptions.py             # 全局异常处理器
-│   ├── middleware/                    # 中间件
-│   │   └── middleware.py             # 请求追踪和日志中间件
-│   └── schemas/                       # 通用数据模型
-│       └── base_resp_model_define.py  # BaseResponse统一响应格式
+│   ├── auth/                          # 认证模块 (JWT Token, 用户管理)
+│   ├── config/                        # 配置管理 (加载验证, 错误码定义)
+│   ├── exceptions/                    # 异常处理 (全局异常处理器, 业务异常定义)
+│   ├── middleware/                    # 中间件 (认证, 文件处理, 日志, 请求追踪)
+│   ├── schemas/                       # 通用数据模型 (BaseResponse, 文件模型)
+│   └── storage/                       # 数据存储 (MongoDB适配器)
 ├── 📁 configs/                        # ⚙️ 统一配置管理
-│   ├── app.yml                       # 应用基础配置
-│   ├── services/                     # 服务配置
-│   │   └── services.yml              # 服务启用和端点配置
-│   └── llm_providers/                # LLM提供商配置
-│       └── openai.yml                # OpenAI兼容模型配置
+│   ├── app/                          # 应用配置 (数据库, 认证, 日志)
+│   ├── services/                     # 服务配置 (启用状态, 端点配置)
+│   └── llm_providers/                # LLM提供商配置 (模型参数)
 ├── 📁 services/                       # 🏢 AI服务模块
 │   ├── base.py                       # BaseService抽象基类
 │   ├── registry.py                   # 服务注册发现机制
-│   └── chat/                         # 🤖 Chat服务示例
-│       ├── __init__.py               # 模块导出
-│       ├── service.py                # ChatService主类
-│       ├── schemas.py                # 数据模型定义
-│       ├── handlers.py               # 业务逻辑处理
-│       ├── routers.py                # HTTP路由定义
-│       └── adapters/                 # 协议适配器
-│           ├── base.py               # 适配器抽象接口
-│           └── openai_adapter.py     # OpenAI协议适配器
+│   ├── chat/                         # 🤖 Chat服务 (单轮/多轮对话)
+│   └── document/                     # 📄 Document服务 (PDF解析, 表格提取)
+├── 📁 scripts/                        # 🛠️ 管理脚本
+│   └── create_auth_user.py           # 认证用户创建脚本
 ├── 📁 logs/                          # 📝 日志文件目录
 ├── requirements.txt                   # Python依赖
 └── README.md                         # 项目文档
@@ -129,17 +142,25 @@ models:
 services:
   enabled:
     - chat
-    # - document    # 暂未实现
+    - document
     # - retrieval   # 暂未实现
   
   chat:
     enabled: true
     endpoints:
-      single_turn_chat: true
-      multi_turn_chat: true
+      chat: true      # 统一对话接口(根据history判断单轮/多轮)
+      chat_stream: true  # 流式对话
     enabled_models:
       - qwen3-32B
       - qwen3-14B
+  
+  document:
+    enabled: true
+    endpoints:
+      pdf_parser: true
+      table_extract: true
+      text_extract: true
+    max_file_size: 52428800  # 50MB
 ```
 
 ### 3. 创建认证用户
@@ -420,36 +441,35 @@ logger.info(f"业务处理开始 - TraceID: {trace_id}")
 logger.error(f"处理失败 - TraceID: {trace_id} | Error: {str(e)}")
 ```
 
-## 🤖 Chat服务示例
-
-当前已实现的Chat服务包含以下功能：
+## 🤖 Chat服务
 
 ### API接口
 
 | 接口 | 方法 | 路径 | 说明 |
 |------|------|------|------|
-| 单轮对话 | POST | `/chat/single_turn_chat` | 非流式单轮对话 |
-| 多轮对话 | POST | `/chat/multi_turn_chat` | 非流式多轮对话 |
-| 单轮流式 | POST | `/chat/single_turn_chat_stream` | 流式单轮对话 |
-| 多轮流式 | POST | `/chat/multi_turn_chat_stream` | 流式多轮对话 |
+| 统一对话 | POST | `/chat/chat` | 非流式对话(根据history自动判断单轮/多轮) |
+| 流式对话 | POST | `/chat/chat-stream` | 流式对话(根据history自动判断单轮/多轮) |
 | 模型列表 | GET | `/chat/models` | 获取启用的模型列表 |
 
 ### 请求示例
 
 ```bash
-# 单轮对话
-curl -X POST "http://localhost:19999/chat/single_turn_chat" \
+# 单轮对话 (history为空)
+curl -X POST "http://localhost:19999/chat/chat" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your_token>" \
   -d '{
     "query": "你好",
+    "history": [],
     "model": "qwen3-32B",
     "temperature": 0.7,
     "max_tokens": 2000
   }'
 
-# 多轮对话
-curl -X POST "http://localhost:19999/chat/multi_turn_chat" \
+# 多轮对话 (包含history)
+curl -X POST "http://localhost:19999/chat/chat" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your_token>" \
   -d '{
     "query": "继续刚才的话题",
     "history": [
@@ -514,16 +534,70 @@ ProtocolAdapterFactory.register_adapter('your_protocol', YourProtocolAdapter)
 
 ## 📝 更新日志
 
-### v1.0.0 (当前版本)
+### v1.1.0 (当前版本)
 - ✅ 统一AI服务平台架构
-- ✅ Chat服务完整实现
+- ✅ Chat服务完整实现(统一单轮/多轮对话接口)
+- ✅ Document服务完整实现(PDF解析、表格提取、文本提取)
+- ✅ 智能文件处理中间件(支持multipart和base64)
+- ✅ 统一异常处理机制(中间件+全局处理器)
 - ✅ 服务注册发现机制
 - ✅ 协议适配器模式
-- ✅ 快速启动优化
-- ✅ 统一响应格式
-- ✅ 全链路追踪
+- ✅ 统一响应格式和全链路追踪
+
+## 📄 Document服务
+
+### API接口
+
+| 接口 | 方法 | 路径 | 说明 |
+|------|------|------|------|
+| PDF解析 | POST | `/document/pdf-parser` | 解析PDF文档内容 |
+| 批量PDF解析 | POST | `/document/pdf-parser-batch` | 批量解析PDF任务 |
+| 查询解析状态 | GET | `/document/query-pdf-parser-task/{pdf_parser_batch_task_id}` | 查询批量解析任务状态 |
+| 表格提取 | POST | `/document/table-extract` | 从文档中提取表格(HTML格式) |
+| 文本提取 | POST | `/document/text-extract` | 从文档中提取纯文本 |
+| 文本提取批量 | POST | `/document/text-extract-batch` | 批量文本提取任务 |
+| 文档转换 | POST | `/document/convert` | 文档格式转换 |
+
+### 文件上传支持
+
+**方式1: multipart/form-data**
+```bash
+# 使用表单上传文件
+curl -X POST "http://localhost:19999/document/pdf-parser" \
+  -H "Authorization: Bearer <your_token>" \
+  -F "input_type=file" \
+  -F "file=@document.pdf" \
+  -F "filename=document.pdf" \
+  -F "output_format=text"
+```
+
+**方式2: base64编码**
+```bash
+# 使用base64编码上传
+curl -X POST "http://localhost:19999/document/pdf-parser" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your_token>" \
+  -d '{
+    "input_type": "base64",
+    "filename": "document.pdf",
+    "file_data": "<base64_encoded_file_content>",
+    "output_format": "text"
+  }'
+```
+
+### 中间件架构
+
+**智能文件处理中间件**:
+- 自动检测文件上传类型(multipart/base64)
+- 统一文件处理逻辑，创建临时文件
+- 自动文件清理机制
+- 文件大小限制和验证
+
+**统一异常处理**:
+- 中间件抛出HTTPException或业务异常
+- 全局异常处理器统一转换为BaseResponse格式
+- 职责分离: 中间件专注业务逻辑，异常处理器专注响应格式化
 
 ### 规划中功能
-- 🔄 Document服务 (PDF/Word处理)
 - 🔄 Retrieval服务 (向量检索)
 - 🔄 Multimodal服务 (图像/音频处理)

@@ -3,7 +3,7 @@ Description: 全局异常处理和自定义异常定义
 Author: zyq
 Date: 2025-08-13 14:30:00
 LastEditors: zyq
-LastEditTime: 2025-08-13 14:30:00
+LastEditTime: 2025-08-26 17:13:41
 '''
 from typing import Any, Dict, Optional
 from fastapi import Request, HTTPException
@@ -63,7 +63,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
         f"Path: {request.url.path} | "
         f"Method: {request.method} | "
         f"Exception: {type(exc).__name__}: {str(exc)} | "
-        f"Traceback: {traceback.format_exc()}"
+        #f"Traceback: {traceback.format_exc()}"  #如果需要输出堆栈信息到日志则取消注释
     )
     
     # 根据异常类型返回不同响应
