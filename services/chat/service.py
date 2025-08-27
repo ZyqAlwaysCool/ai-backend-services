@@ -35,17 +35,17 @@ class ChatService(BaseService):
         """初始化chat服务"""
         try:
             if not self.enabled:
-                logger.warning("Chat服务未启用")
+                logger.warning("Chat service not enabled")
                 return
             
             # 初始化handlers
             self.handlers = ChatHandlers(self.config)
             await self.handlers.initialize()
             
-            logger.info("Chat服务初始化成功")
+            logger.info("Chat service initialized successfully")
             
         except Exception as e:
-            logger.error(f"Chat服务初始化失败: {str(e)}")
+            logger.error(f"Chat service initialization failed: {str(e)}")
             raise
     
     async def health_check(self) -> bool:
@@ -83,6 +83,6 @@ class ChatService(BaseService):
         try:
             if self.handlers:
                 # 这里可以添加清理逻辑，比如关闭连接、清理缓存等
-                logger.info("Chat服务清理完成")
+                logger.info("Chat service cleanup completed")
         except Exception as e:
-            logger.error(f"Chat服务关闭时发生错误: {str(e)}")
+            logger.error(f"Error occurred during Chat service shutdown: {str(e)}")

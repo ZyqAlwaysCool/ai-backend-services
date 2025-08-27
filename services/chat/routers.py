@@ -36,12 +36,12 @@ async def _stream_wrapper(generator, trace_id: str):
         yield f"data: {error_chunk}\n\n"
 
 
-@chat_router.post("/chat", response_model=BaseResponse)
+@chat_router.post("/chat", response_model=BaseResponse, summary="非流式对话")
 async def chat(request: ChatRequest, http_request: Request):
     """对话接口（非流式响应，根据history字段判断单轮/多轮）"""
     trace_id = str(uuid.uuid4())
-    conversation_type = "多轮" if len(request.history) > 0 else "单轮"
-    logger.info(f"Received {conversation_type}对话 request - TraceID: {trace_id}")
+    conversation_type = "multi-turn" if len(request.history) > 0 else "single-turn"
+    logger.info(f"Received {conversation_type} chat request - TraceID: {trace_id}")
     
     try:
         # 从service_registry获取chat服务的handlers实例
@@ -85,12 +85,12 @@ async def chat(request: ChatRequest, http_request: Request):
         )
 
 
-@chat_router.post("/chat-stream")
+@chat_router.post("/chat-stream", summary="流式对话")
 async def chat_stream(request: ChatRequest, http_request: Request):
     """对话接口（流式响应，根据history字段判断单轮/多轮）"""
     trace_id = str(uuid.uuid4())
-    conversation_type = "多轮" if len(request.history) > 0 else "单轮"
-    logger.info(f"Received {conversation_type}流式对话 request - TraceID: {trace_id}")
+    conversation_type = "multi-turn" if len(request.history) > 0 else "single-turn"
+    logger.info(f"Received {conversation_type} stream chat request - TraceID: {trace_id}")
     
     try:
         # 从service_registry获取chat服务的handlers实例
@@ -153,7 +153,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
         )
 
 
-@chat_router.get("/models", response_model=BaseResponse)
+@chat_router.get("/models", response_model=BaseResponse, summary="获取可用模型")
 async def get_enabled_models(http_request: Request):
     """获取启用的模型列表"""
     trace_id = str(uuid.uuid4())

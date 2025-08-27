@@ -1,7 +1,9 @@
 '''
-Description: Chat服务纯业务逻辑处理
+Description: 对话类服务业务逻辑处理器
 Author: zyq
-Date: 2025-01-21
+Date: 2025-08-26 11:19:24
+LastEditors: zyq
+LastEditTime: 2025-08-27 15:20:44
 '''
 from typing import Dict, Any, AsyncGenerator, List
 from loguru import logger
@@ -39,7 +41,7 @@ class ChatHandlers:
         """初始化处理器"""
         # 预初始化所有配置的模型适配器，但不进行健康检查
         await self._initialize_adapters()
-        logger.info("Chat handlers初始化完成")
+        logger.info("Chat handlers initialized")
     
     async def _initialize_adapters(self):
         """初始化协议适配器"""
@@ -112,7 +114,7 @@ class ChatHandlers:
         is_multi_turn = len(request.history) > 0
         conversation_type = "多轮" if is_multi_turn else "单轮"
         
-        logger.info(f"{conversation_type}对话 - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}..." + 
+        logger.info(f"{conversation_type} conversation - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}..." + 
                    (f" | History count: {len(request.history)}" if is_multi_turn else ""))
         
         try:
@@ -138,7 +140,7 @@ class ChatHandlers:
             return response
                 
         except Exception as e:
-            logger.error(f"{conversation_type}对话失败 - TraceID: {trace_id} | Error: {str(e)}")
+            logger.error(f"{conversation_type} conversation failed - TraceID: {trace_id} | Error: {str(e)}")
             if isinstance(e, (ValidationException, BaseBusinessException)):
                 raise
             else:
@@ -152,7 +154,7 @@ class ChatHandlers:
         is_multi_turn = len(request.history) > 0
         conversation_type = "多轮" if is_multi_turn else "单轮"
         
-        logger.info(f"{conversation_type}流式对话 - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}..." + 
+        logger.info(f"{conversation_type} stream conversation - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}..." + 
                    (f" | History count: {len(request.history)}" if is_multi_turn else ""))
         
         try:
@@ -177,7 +179,7 @@ class ChatHandlers:
                 yield chunk
                 
         except Exception as e:
-            logger.error(f"{conversation_type}流式对话失败 - TraceID: {trace_id} | Error: {str(e)}")
+            logger.error(f"{conversation_type} stream conversation failed - TraceID: {trace_id} | Error: {str(e)}")
             if isinstance(e, (ValidationException, BaseBusinessException)):
                 raise
             else:

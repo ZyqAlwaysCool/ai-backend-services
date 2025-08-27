@@ -24,12 +24,12 @@ class DocumentService(BaseService):
     
     async def initialize(self) -> None:
         if not self.enabled:
-            logger.warning("Document服务未启用")
+            logger.warning("Document service not enabled")
             return
         
         self.handlers = DocumentHandlers(self.config)
         await self.handlers.initialize()
-        logger.info("Document服务初始化成功")
+        logger.info("Document service initialized successfully")
     
     async def health_check(self) -> bool:
         if not self.enabled:

@@ -132,10 +132,10 @@ def validate_config_on_startup():
     """启动时配置验证"""
     try:
         app_config = load_app_config()
-        logger.info(f"应用配置加载成功: {app_config}")
+        logger.info(f"Application configuration loaded successfully: {app_config}")
         return True
     except ConfigValidationError as e:
-        logger.error(f"配置验证失败: {e}")
+        logger.error(f"Configuration validation failed: {e}")
         return False
 
 

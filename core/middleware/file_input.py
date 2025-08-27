@@ -14,7 +14,7 @@ from core.schemas.base_resp_model_define import BaseResponse
 class FileInputMiddleware(BaseHTTPMiddleware):
     """文件输入处理中间件"""
     
-    def __init__(self, app, max_file_size: int = 5 * 1024 * 1024):  # 5MB
+    def __init__(self, app, max_file_size: int = 10 * 1024 * 1024):  # 5MB
         super().__init__(app)
         self.max_file_size = max_file_size
         # 需要处理文件的具体路径

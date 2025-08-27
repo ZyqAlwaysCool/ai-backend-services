@@ -29,11 +29,11 @@ from loguru import logger
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """生命周期管理器"""
-    logger.info("AI服务平台启动中...")
+    logger.info("Starting AI service platform...")
     
     # 启动时配置验证
     if not validate_config_on_startup():
-        logger.error("配置验证失败，应用启动中止")
+        logger.error("Configuration validation failed, application startup aborted")
         raise SystemExit(1)
     
     # 初始化认证服务
@@ -53,17 +53,17 @@ async def lifespan(app: FastAPI):
         # 注入到路由模块
         set_auth_service(auth_service)
         
-        logger.info("认证服务初始化成功")
+        logger.info("Auth service initialized successfully")
         
     except Exception as e:
-        logger.error(f"认证服务初始化失败: {str(e)}")
+        logger.error(f"Auth service initialization failed: {str(e)}")
         raise SystemExit(1)
     
     # 发现并注册所有启用的服务
     try:
         await service_registry.discover_and_register_services()
         enabled_services = list(service_registry.get_enabled_services().keys())
-        logger.info(f"已启用的服务: {enabled_services}")
+        logger.info(f"Enabled services: {enabled_services}")
         
         # 注册所有服务路由
         for service_name, service in service_registry.get_enabled_services().items():
@@ -75,35 +75,35 @@ async def lifespan(app: FastAPI):
                 )
         
         enabled_service_count = len(service_registry.get_enabled_services())
-        logger.info(f"已注册 {enabled_service_count} 个服务路由")
+        logger.info(f"Registered {enabled_service_count} service routes")
         
         # 将服务注册器存储到app状态中，供路由访问
         app.state.service_registry = service_registry
         
         # 注册认证路由
         app.include_router(auth_router)
-        logger.info("认证路由注册成功")
+        logger.info("Auth routes registered successfully")
         
         # 将认证服务存储到app状态供中间件使用
         app.state.auth_service = auth_service
-        logger.info("认证服务已存储到app状态")
+        logger.info("Auth service stored to app state")
         
     except Exception as e:
-        logger.error(f"服务初始化失败: {str(e)}")
+        logger.error(f"Service initialization failed: {str(e)}")
         raise SystemExit(1)
     
-    logger.info("AI服务平台启动完成，所有组件已就绪")
+    logger.info("AI service platform started successfully, all components ready")
     yield
     
     # 关闭时清理资源
-    logger.info("AI服务平台正在关闭...")
+    logger.info("AI service platform is shutting down...")
     try:
         for service in service_registry.get_enabled_services().values():
             if hasattr(service, 'shutdown'):
                 await service.shutdown()
-        logger.info("所有服务已关闭")
+        logger.info("All services shutdown completed")
     except Exception as e:
-        logger.error(f"服务关闭时发生错误: {str(e)}")
+        logger.error(f"Error occurred during service shutdown: {str(e)}")
 
 
 # 创建FastAPI应用
@@ -246,7 +246,7 @@ if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "19999"))
     
-    logger.info(f"启动AI服务平台: http://{host}:{port}")
+    logger.info(f"Starting AI service platform: http://{host}:{port}")
     uvicorn.run(
         "app:app",
         host=host,
