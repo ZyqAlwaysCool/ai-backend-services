@@ -11,7 +11,14 @@ mongo:
   port: 27017
   database: ai_backend_services
 
+redis:
+  host: 127.0.0.1
+  port: 6379
+  db: 0
+  password: null
+  max_connections: 10
+
 # JWT认证配置
 auth:
-  jwt_secret_key: "your-super-secret-key-change-in-production-123456"
+  jwt_secret_key: "ai-backend-services-jwt-secret"
   token_expire_hours: 24

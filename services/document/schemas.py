@@ -32,7 +32,7 @@ class PDFFileItem(BaseModel):
 
 class PDFParserBatchRequest(BaseModel):
     """PDF批量解析请求模型"""
-    files: List[PDFFileItem] = Field(..., description="PDF文件列表，最多10个文件")
+    files: List[PDFFileItem] = Field(..., description="PDF文件列表,最多10个文件")
     output_format: str = Field("docx", description="统一输出格式: text | docx")
     parser_options: Dict = Field(default={}, description="统一解析选项")
 

@@ -19,6 +19,7 @@ from core.storage.mongo_storage import MongoStorage
 from core.auth.auth_service import AuthService
 from core.auth.user_storage import AuthUserStorage
 from core.auth.auth_router import auth_router, set_auth_service
+from core.tasks.worker_manager import get_worker_manager
 from services.registry import service_registry
 
 # 设置日志
@@ -92,12 +93,36 @@ async def lifespan(app: FastAPI):
         logger.error(f"Service initialization failed: {str(e)}")
         raise SystemExit(1)
     
+    # 启动ARQ Worker
+    try:
+        worker_manager = get_worker_manager()
+        worker_success = await worker_manager.start_worker()
+        
+        if worker_success:
+            logger.info("ARQ Worker started successfully")
+            # 将worker管理器存储到app状态
+            app.state.worker_manager = worker_manager
+        else:
+            logger.warning("ARQ Worker failed to start, task processing will be unavailable")
+            
+    except Exception as e:
+        logger.error(f"ARQ Worker initialization failed: {str(e)}")
+        # 不终止应用启动，但记录错误
+        logger.warning("Continuing without task worker - batch processing will be unavailable")
+    
     logger.info("AI service platform started successfully, all components ready")
     yield
     
     # 关闭时清理资源
     logger.info("AI service platform is shutting down...")
     try:
+        # 首先停止Worker
+        if hasattr(app.state, 'worker_manager'):
+            logger.info("Stopping ARQ Worker...")
+            await app.state.worker_manager.stop_worker()
+            logger.info("ARQ Worker stopped")
+        
+        # 然后停止其他服务
         for service in service_registry.get_enabled_services().values():
             if hasattr(service, 'shutdown'):
                 await service.shutdown()

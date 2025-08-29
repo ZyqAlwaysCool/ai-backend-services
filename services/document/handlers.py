@@ -3,7 +3,7 @@ Description: 文档类服务业务逻辑处理器
 Author: zyq
 Date: 2025-08-27 15:33:18
 LastEditors: zyq
-LastEditTime: 2025-08-27 15:35:11
+LastEditTime: 2025-08-29 15:41:21
 '''
 
 from typing import Dict, Any
@@ -12,6 +12,7 @@ import uuid
 from loguru import logger
 
 from core.schemas.file_models import FileInfo
+from core.tasks import TaskManagerFactory
 from .schemas import (
     PDFParserRequest, PDFParserResponse,
     PDFParserBatchRequest, PDFParserBatchResponse,
@@ -23,6 +24,7 @@ from .schemas import (
     TableExtractRequest, TableExtractResponse
 )
 from .processors import PDFProcessor
+from .task_managers import PDFBatchTaskManager
 
 
 class DocumentHandlers:
@@ -33,47 +35,70 @@ class DocumentHandlers:
         self.config = config
         # 初始化各种处理器
         self.pdf_processor = PDFProcessor(config)
+        # 任务管理器将在初始化时创建
+        self.pdf_batch_manager = None
     
     async def initialize(self):
         """轻量级初始化Document服务处理器"""
-        logger.info("Document handlers initialized")
+        # 创建任务管理后端
+        queue_backend, storage_backend = TaskManagerFactory.create_default_backends()
+        
+        # 初始化PDF批处理任务管理器
+        self.pdf_batch_manager = PDFBatchTaskManager(
+            queue_backend, 
+            storage_backend, 
+            self.config
+        )
+        
+        logger.info("Document handlers initialized with task managers")
     
     # ==================== PDF处理接口 ====================
     
     async def pdf_parser(self, request: PDFParserRequest, temp_file_path: str, file_info: FileInfo, trace_id: str = None) -> PDFParserResponse:
-        """PDF解析处理，提取文本、图片、表格内容"""
+        """PDF解析处理,提取文本、图片、表格内容"""
         return await self.pdf_processor.process(request, temp_file_path, file_info, trace_id)
     
     async def pdf_parser_batch(self, request: PDFParserBatchRequest, trace_id: str = None) -> PDFParserBatchResponse:
         """PDF批量解析处理"""
         logger.info(f"PDF parser batch request - TraceID: {trace_id} | Files count: {len(request.files)}")
         
-        # TODO: 实现PDF批量解析逻辑
-        # 1. 创建批量任务ID
-        # 2. 异步处理文件列表
+        if not self.pdf_batch_manager:
+            raise RuntimeError("PDF batch task manager not initialized")
         
-        batch_task_id = f"pdf_batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}"
-        
-        # 返回模拟成功响应
-        return PDFParserBatchResponse(
-            pdf_parser_batch_task_id=batch_task_id,
-            total_files=len(request.files),
-            created_at=datetime.now().isoformat()
-        )
+        try:
+            # 提交批处理任务到任务管理器
+            return await self.pdf_batch_manager.submit_pdf_batch_task(request, trace_id)
+        except RuntimeError as e:
+            # 捕获任务管理器的运行时错误，包括Worker不可用
+            logger.error(f"PDF batch task submission failed - TraceID: {trace_id} | Error: {str(e)}")
+            raise RuntimeError(f"批量处理服务暂时不可用，请稍后重试。如果问题持续存在，请联系系统管理员。详细错误：{str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error in PDF batch processing - TraceID: {trace_id} | Error: {str(e)}")
+            raise RuntimeError(f"处理请求时发生未知错误，请联系系统管理员。")
     
     async def query_pdf_parser_task(self, task_id: str, trace_id: str = None) -> PDFParserTaskStatusResponse:
         """查询PDF批量解析任务状态"""
         logger.info(f"Query PDF parser task - TraceID: {trace_id} | TaskID: {task_id}")
         
-        # TODO: 实现PDF批量解析任务状态查询逻辑
-        # 1. 根据task_id查询任务状态
-        # 2. 返回任务详细信息
+        if not self.pdf_batch_manager:
+            raise RuntimeError("PDF batch task manager not initialized")
         
-        # 返回模拟成功响应
+        # 从任务管理器获取任务状态
+        task_status = await self.pdf_batch_manager.get_batch_task_status(task_id)
+        
+        if not task_status:
+            # 任务不存在
+            return PDFParserTaskStatusResponse(
+                pdf_parser_batch_task_id=task_id,
+                status="not_found",
+                results=None
+            )
+        
+        # 转换为PDFParserTaskStatusResponse格式
         return PDFParserTaskStatusResponse(
             pdf_parser_batch_task_id=task_id,
-            status="completed",
-            results=[]
+            status=task_status['status'],
+            results=task_status.get('results', [])
         )
     
     # ==================== 文档转换接口 ====================
