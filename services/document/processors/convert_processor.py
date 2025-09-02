@@ -3,7 +3,7 @@ Description: 文档格式转换处理器
 Author: zyq
 Date: 2025-09-01 16:51:00
 LastEditors: zyq
-LastEditTime: 2025-09-02 08:55:20
+LastEditTime: 2025-09-02 10:46:32
 '''
 
 import os
@@ -25,6 +25,11 @@ def _weasyprint_write_pdf(html_content: str, output_path: str):
     """在独立进程中执行WeasyPrint PDF生成"""
     import weasyprint
     weasyprint.HTML(string=html_content).write_pdf(output_path)
+
+
+# 全局共享的进程池和并发控制
+_pdf_executor = ProcessPoolExecutor(max_workers=2)
+_pdf_semaphore = asyncio.Semaphore(2)
 
 
 class ConvertProcessor(BaseProcessor):
@@ -114,14 +119,15 @@ class ConvertProcessor(BaseProcessor):
             output_path = self.file_manager.create_file_path(task_id, output_filename)
             
             # 使用weasyprint生成PDF
-            # 使用ProcessPoolExecutor异步执行WeasyPrint
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                ProcessPoolExecutor(), 
-                _weasyprint_write_pdf, 
-                html_content, 
-                output_path
-            )
+            # 使用全局进程池和信号量控制并发
+            async with _pdf_semaphore:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    _pdf_executor, 
+                    _weasyprint_write_pdf, 
+                    html_content, 
+                    output_path
+                )
             
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
@@ -151,14 +157,15 @@ class ConvertProcessor(BaseProcessor):
             output_path = self.file_manager.create_file_path(task_id, output_filename)
             
             # 使用weasyprint生成PDF
-            # 使用ProcessPoolExecutor异步执行WeasyPrint
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                ProcessPoolExecutor(), 
-                _weasyprint_write_pdf, 
-                html_content, 
-                output_path
-            )
+            # 使用全局进程池和信号量控制并发
+            async with _pdf_semaphore:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    _pdf_executor, 
+                    _weasyprint_write_pdf, 
+                    html_content, 
+                    output_path
+                )
             
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
@@ -207,14 +214,15 @@ class ConvertProcessor(BaseProcessor):
             output_path = self.file_manager.create_file_path(task_id, output_filename)
             
             # 使用weasyprint生成PDF
-            # 使用ProcessPoolExecutor异步执行WeasyPrint
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                ProcessPoolExecutor(), 
-                _weasyprint_write_pdf, 
-                html_content, 
-                output_path
-            )
+            # 使用全局进程池和信号量控制并发
+            async with _pdf_semaphore:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    _pdf_executor, 
+                    _weasyprint_write_pdf, 
+                    html_content, 
+                    output_path
+                )
             
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
@@ -366,14 +374,15 @@ class ConvertProcessor(BaseProcessor):
             output_path = self.file_manager.create_file_path(task_id, output_filename)
             
             # 使用weasyprint生成PDF
-            # 使用ProcessPoolExecutor异步执行WeasyPrint
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                ProcessPoolExecutor(), 
-                _weasyprint_write_pdf, 
-                html_content, 
-                output_path
-            )
+            # 使用全局进程池和信号量控制并发
+            async with _pdf_semaphore:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    _pdf_executor, 
+                    _weasyprint_write_pdf, 
+                    html_content, 
+                    output_path
+                )
             
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
@@ -402,14 +411,15 @@ class ConvertProcessor(BaseProcessor):
             output_path = self.file_manager.create_file_path(task_id, output_filename)
             
             # 使用weasyprint生成PDF
-            # 使用ProcessPoolExecutor异步执行WeasyPrint
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                ProcessPoolExecutor(), 
-                _weasyprint_write_pdf, 
-                html_content, 
-                output_path
-            )
+            # 使用全局进程池和信号量控制并发
+            async with _pdf_semaphore:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    _pdf_executor, 
+                    _weasyprint_write_pdf, 
+                    html_content, 
+                    output_path
+                )
             
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
@@ -459,14 +469,15 @@ class ConvertProcessor(BaseProcessor):
             output_path = self.file_manager.create_file_path(task_id, output_filename)
             
             # 使用weasyprint生成PDF
-            # 使用ProcessPoolExecutor异步执行WeasyPrint
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                ProcessPoolExecutor(), 
-                _weasyprint_write_pdf, 
-                html_content, 
-                output_path
-            )
+            # 使用全局进程池和信号量控制并发
+            async with _pdf_semaphore:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    _pdf_executor, 
+                    _weasyprint_write_pdf, 
+                    html_content, 
+                    output_path
+                )
             
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
@@ -814,14 +825,15 @@ class ConvertProcessor(BaseProcessor):
             output_path = self.file_manager.create_file_path(task_id, output_filename)
             
             # 使用weasyprint生成PDF
-            # 使用ProcessPoolExecutor异步执行WeasyPrint
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                ProcessPoolExecutor(), 
-                _weasyprint_write_pdf, 
-                html_content, 
-                output_path
-            )
+            # 使用全局进程池和信号量控制并发
+            async with _pdf_semaphore:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    _pdf_executor, 
+                    _weasyprint_write_pdf, 
+                    html_content, 
+                    output_path
+                )
             
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
@@ -873,14 +885,15 @@ class ConvertProcessor(BaseProcessor):
             output_path = self.file_manager.create_file_path(task_id, output_filename)
             
             # 使用weasyprint生成PDF
-            # 使用ProcessPoolExecutor异步执行WeasyPrint
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                ProcessPoolExecutor(), 
-                _weasyprint_write_pdf, 
-                html_content, 
-                output_path
-            )
+            # 使用全局进程池和信号量控制并发
+            async with _pdf_semaphore:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    _pdf_executor, 
+                    _weasyprint_write_pdf, 
+                    html_content, 
+                    output_path
+                )
             
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
@@ -929,14 +942,15 @@ class ConvertProcessor(BaseProcessor):
             output_path = self.file_manager.create_file_path(task_id, output_filename)
             
             # 使用weasyprint生成PDF
-            # 使用ProcessPoolExecutor异步执行WeasyPrint
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                ProcessPoolExecutor(), 
-                _weasyprint_write_pdf, 
-                html_content, 
-                output_path
-            )
+            # 使用全局进程池和信号量控制并发
+            async with _pdf_semaphore:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    _pdf_executor, 
+                    _weasyprint_write_pdf, 
+                    html_content, 
+                    output_path
+                )
             
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)

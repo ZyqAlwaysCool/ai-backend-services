@@ -1,4 +1,4 @@
-# 日志、存储、队列等公共开关
+# 生产环境配置
 log:
   level: INFO
   dir: logs
@@ -16,9 +16,14 @@ redis:
   port: 6379
   db: 0
   password: null
-  max_connections: 10
+  max_connections: 20
 
 # JWT认证配置
 auth:
-  jwt_secret_key: "ai-backend-services-jwt-secret"
+  jwt_secret_key: "ai-backend-services-jwt-secret-prod"
   token_expire_hours: 24
+
+# 生产环境端口配置
+server:
+  host: "0.0.0.0"
+  port: 19999

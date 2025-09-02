@@ -11,11 +11,14 @@ from pathlib import Path
 
 def setup_logger(custom_dir: str | None = None):
     """
-    读取 configs/app.yml 中的 log 配置，
-    并按“每天一个独立文件”输出日志。
+    读取环境特定的app配置中的log配置，
+    并按"每天一个独立文件"输出日志。
     custom_dir: 业务代码可选传入日志目录
     """
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "configs" / "app" / "app.yml"
+    # 根据环境变量选择配置文件，默认为开发环境
+    env = os.getenv('ENV', 'dev')
+    config_filename = f"app.{env}.yml"
+    cfg_path = Path(__file__).resolve().parent.parent.parent / "configs" / "app" / config_filename
     log_cfg  = yaml.safe_load(open(cfg_path, encoding="utf-8")).get("log", {})
     
     # 2. 优先级：custom_dir -> env -> yaml

@@ -1,0 +1,29 @@
+# 开发环境配置
+log:
+  level: DEBUG
+  dir: logs
+  format: "{time} | {level} | {message}"
+  retention: "7 days"
+  compression: "zip"
+
+mongo:
+  host: 127.0.0.1
+  port: 27017
+  database: ai_backend_services_dev
+
+redis:
+  host: 127.0.0.1
+  port: 6379
+  db: 1  # 使用不同的redis数据库
+  password: null
+  max_connections: 10
+
+# JWT认证配置
+auth:
+  jwt_secret_key: "ai-backend-services-jwt-secret-dev"
+  token_expire_hours: 24
+
+# 开发环境端口配置
+server:
+  host: "0.0.0.0"
+  port: 20000

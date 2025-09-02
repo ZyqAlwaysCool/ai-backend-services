@@ -55,6 +55,8 @@ class AppConfig(BaseModel):
     redis_max_connections: int = Field(10, description="Redis最大连接数", ge=1, le=100)
     jwt_secret_key: str = Field(..., description="JWT密钥", min_length=16)
     token_expire_hours: int = Field(24, description="Token过期时间(小时)", ge=1, le=168)
+    server_host: str = Field("0.0.0.0", description="服务器主机")
+    server_port: int = Field(18888, description="服务器端口", ge=1, le=65535)
     
     class Config:
         frozen = True
@@ -92,7 +94,10 @@ def get_app_config() -> AppConfig:
 @lru_cache(maxsize=1)
 def load_app_config() -> AppConfig:
     """加载应用配置（带缓存）"""
-    cfg_path = Path(__file__).parent.parent.parent / "configs" / "app" / "app.yml"
+    # 根据环境变量选择配置文件，默认为开发环境
+    env = os.getenv('ENV', 'dev')
+    config_filename = f"app.{env}.yml"
+    cfg_path = Path(__file__).parent.parent.parent / "configs" / "app" / config_filename
     
     if not cfg_path.exists():
         raise ConfigValidationError(f"应用配置文件不存在: {cfg_path}")
@@ -136,6 +141,13 @@ def load_app_config() -> AppConfig:
                 'token_expire_hours': auth_config.get('token_expire_hours', 24)
             })
         
+        if 'server' in raw_config:
+            server_config = raw_config['server']
+            config_dict.update({
+                'server_host': server_config.get('host', '0.0.0.0'),
+                'server_port': server_config.get('port', 18888)
+            })
+        
         # 支持环境变量覆盖
         config_dict['mongo_host'] = os.getenv('MONGO_HOST', config_dict.get('mongo_host', '127.0.0.1'))
         config_dict['mongo_port'] = int(os.getenv('MONGO_PORT', config_dict.get('mongo_port', 27017)))
@@ -148,6 +160,8 @@ def load_app_config() -> AppConfig:
         config_dict['log_level'] = os.getenv('LOG_LEVEL', config_dict.get('log_level', 'INFO'))
         config_dict['jwt_secret_key'] = os.getenv('JWT_SECRET_KEY', config_dict.get('jwt_secret_key'))
         config_dict['token_expire_hours'] = int(os.getenv('TOKEN_EXPIRE_HOURS', config_dict.get('token_expire_hours', 24)))
+        config_dict['server_host'] = os.getenv('HOST', config_dict.get('server_host', '0.0.0.0'))
+        config_dict['server_port'] = int(os.getenv('PORT', config_dict.get('server_port', 18888)))
         
         return AppConfig(**config_dict)
     except Exception as e:

@@ -268,8 +268,9 @@ async def list_services(request: Request):
 if __name__ == "__main__":
     import uvicorn
     
-    host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", "19999"))
+    app_config = get_app_config()
+    host = app_config.server_host
+    port = app_config.server_port
     
     logger.info(f"Starting AI service platform: http://{host}:{port}")
     uvicorn.run(
