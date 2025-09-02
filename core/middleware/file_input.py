@@ -155,8 +155,9 @@ class FileInputMiddleware(BaseHTTPMiddleware):
                     "extract_options": json.loads(form.get("extract_options", "{}"))
                 })
             elif "/table-extract" in request.url.path:
-                # table-extract不需要额外参数，只需要基本的文件信息
-                pass
+                processed_body.update({
+                    "output_format": body.get("output_format", "html_text")
+                })
             
             logger.info(f"Processed multipart file - TraceID: {trace_id} | Filename: {filename} | Size: {file_size}")
             return temp_file_path, file_info, processed_body
@@ -235,8 +236,9 @@ class FileInputMiddleware(BaseHTTPMiddleware):
                     "extract_options": body.get("extract_options", {})
                 })
             elif "/table-extract" in request.url.path:
-                # table-extract不需要额外参数，只需要基本的文件信息
-                pass
+                processed_body.update({
+                    "output_format": body.get("output_format", "html_text")
+                })
             
             logger.info(f"Processed base64 file - TraceID: {trace_id} | Filename: {filename} | Size: {file_size}")
             return temp_file_path, file_info, processed_body

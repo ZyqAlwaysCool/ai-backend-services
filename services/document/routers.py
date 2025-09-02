@@ -559,3 +559,67 @@ async def convert_download(task_id: str, http_request: Request):
             msg="转换文件下载服务异常",
             trace_id=trace_id
         )
+
+
+@document_router.get("/extract-download", summary="表格提取结果文件下载")
+async def extract_download(task_id: str, http_request: Request):
+    """表格提取结果文件下载接口"""
+    trace_id = str(uuid.uuid4())
+    logger.info(f"Received extract file download request - TraceID: {trace_id} | TaskID: {task_id}")
+    
+    try:
+        # 从service_registry获取document服务的handlers实例
+        service_registry = getattr(http_request.app.state, 'service_registry', None)
+        document_service = service_registry.get_service('document') if service_registry else None
+        handlers = document_service.handlers if document_service else None
+        
+        if not handlers:
+            return BaseResponse.error(
+                code=COMMON_ERROR_REQUEST_PARSE_ERROR,
+                msg="Document服务未初始化",
+                trace_id=trace_id
+            )
+        
+        if not task_id.startswith("table-extract-task"):
+            return BaseResponse.error(
+                code=400,
+                msg="无效的表格提取任务ID, 前缀应为: table-extract-task",
+                trace_id=trace_id
+            )
+        
+        # 获取文件管理器（从table_processor中获取）
+        file_manager = handlers.table_processor.file_manager
+        
+        # 获取文件信息和路径
+        file_info = file_manager.get_file_info(task_id)
+        if not file_info:
+            return BaseResponse.error(
+                code=404,
+                msg="文件不存在或已过期，请重新提取表格",
+                trace_id=trace_id
+            )
+        
+        file_path = file_manager.get_file_path(task_id)
+        if not file_path or not os.path.exists(file_path):
+            return BaseResponse.error(
+                code=404,
+                msg="文件不存在或已被删除，请重新提取表格",
+                trace_id=trace_id
+            )
+        
+        logger.info(f"Extract file download initiated - TraceID: {trace_id} | File: {file_info['filename']}")
+        
+        # 返回HTML文件响应
+        return FileResponse(
+            path=file_path,
+            filename=file_info['filename'],
+            media_type='text/html'
+        )
+        
+    except Exception as e:
+        logger.error(f"Extract file download error - TraceID: {trace_id} | Error: {str(e)}")
+        return BaseResponse.error(
+            code=500,
+            msg="表格提取文件下载服务异常",
+            trace_id=trace_id
+        )
