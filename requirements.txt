@@ -7,10 +7,13 @@ anyio==4.9.0
 arq==0.26.3
 attrs==25.3.0
 beautifulsoup4==4.13.5
+Brotli==1.1.0
 certifi==2025.6.15
+cffi==1.17.1
 charset-normalizer==3.4.2
 click==8.2.1
 croniter==6.0.0
+cssselect2==0.8.0
 dataclasses-json==0.6.7
 dill==0.3.8
 distro==1.9.0
@@ -21,6 +24,7 @@ et_xmlfile==2.0.0
 faiss-cpu==1.11.0.post1
 fastapi==0.115.14
 filelock==3.18.0
+fonttools==4.59.2
 frozenlist==1.7.0
 fsspec==2025.3.0
 greenlet==3.2.4
@@ -50,6 +54,7 @@ langgraph-sdk==0.2.0
 langsmith==0.4.13
 loguru==0.7.3
 lxml==6.0.0
+markdown2==2.5.4
 MarkupSafe==3.0.2
 marshmallow==3.26.1
 modelscope==1.28.0
@@ -87,13 +92,16 @@ plumbum==1.9.0
 ply==3.11
 propcache==0.3.2
 pyarrow==21.0.0
+pycparser==2.22
 pydantic==2.11.7
 pydantic-settings==2.10.1
 pydantic_core==2.33.2
+pydyf==0.11.0
 PyJWT==2.10.1
 pymongo==4.13.2
 PyMuPDF==1.26.4
 pypandoc==1.15
+pyphen==0.17.2
 python-dateutil==2.9.0.post0
 python-docx==1.2.0
 python-dotenv==1.1.1
@@ -120,6 +128,8 @@ sympy==1.14.0
 tenacity==9.1.2
 threadpoolctl==3.6.0
 tiktoken==0.11.0
+tinycss2==1.4.0
+tinyhtml5==2.0.0
 tokenizers==0.21.4
 torch==2.8.0
 tqdm==4.67.1
@@ -131,6 +141,9 @@ typing_extensions==4.14.0
 tzdata==2025.2
 urllib3==2.5.0
 uvicorn==0.35.0
+weasyprint==66.0
+webencodings==0.5.1
 xxhash==3.5.0
 yarl==1.20.1
+zopfli==0.2.3.post1
 zstandard==0.23.0

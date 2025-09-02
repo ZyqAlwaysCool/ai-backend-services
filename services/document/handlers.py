@@ -3,7 +3,7 @@ Description: 文档类服务业务逻辑处理器
 Author: zyq
 Date: 2025-08-27 15:33:18
 LastEditors: zyq
-LastEditTime: 2025-08-29 15:41:21
+LastEditTime: 2025-09-01 16:36:45
 '''
 
 from typing import Dict, Any
@@ -25,6 +25,7 @@ from .schemas import (
 )
 from .processors import PDFProcessor
 from .task_managers import PDFBatchTaskManager
+from .task_managers.document_convert_task_manager import DocumentConvertTaskManager
 
 
 class DocumentHandlers:
@@ -37,6 +38,7 @@ class DocumentHandlers:
         self.pdf_processor = PDFProcessor(config)
         # 任务管理器将在初始化时创建
         self.pdf_batch_manager = None
+        self.convert_task_manager = None
     
     async def initialize(self):
         """轻量级初始化Document服务处理器"""
@@ -47,6 +49,13 @@ class DocumentHandlers:
         self.pdf_batch_manager = PDFBatchTaskManager(
             queue_backend, 
             storage_backend, 
+            self.config
+        )
+        
+        # 初始化文档转换任务管理器
+        self.convert_task_manager = DocumentConvertTaskManager(
+            queue_backend,
+            storage_backend,
             self.config
         )
         
@@ -107,41 +116,49 @@ class DocumentHandlers:
         """文档格式转换处理"""
         logger.info(f"Document convert request - TraceID: {trace_id} | Source: {request.source_format} | Target: {request.target_format}")
         
-        # TODO: 实现文档格式转换逻辑
-        # 1. 验证源文件格式是否与source_format匹配
-        # 2. 检查target_format是否支持
-        # 3. 根据convert_options配置进行格式转换
-        # 4. 将转换后的文件保存到指定位置
-        # 5. 生成下载链接或返回转换结果
+        # 1. 前置校验：相同格式拦截
+        if request.source_format == request.target_format:
+            raise ValueError(f"不支持相同格式转换: {request.source_format}")
         
-        convert_task_id = f"convert_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}"
+        # 2. 检查转换类型是否支持
+        supported_conversions = [
+            ('docx', 'pdf'), ('docx', 'markdown'),
+            ('xlsx', 'pdf'), ('xlsx', 'docx'), ('xlsx', 'markdown'),
+            ('markdown', 'pdf'), ('markdown', 'docx')
+        ]
         
-        # 返回模拟成功响应
-        return DocumentConvertResponse(
-            convert_task_id=convert_task_id,
-            source_format=request.source_format,
-            target_format=request.target_format,
-            created_at=datetime.now().isoformat()
-        )
+        if (request.source_format, request.target_format) not in supported_conversions:
+            raise ValueError(f"不支持的转换类型: {request.source_format} → {request.target_format}")
+        
+        # 3. 提交异步转换任务
+        if not self.convert_task_manager:
+            raise RuntimeError("Document convert task manager not initialized")
+        
+        return await self.convert_task_manager.submit_convert_task(request, temp_file_path, file_info, trace_id)
     
     async def query_convert_task(self, convert_task_id: str, trace_id: str = None) -> ConvertTaskStatusResponse:
         """查询格式转换任务状态"""
         logger.info(f"Query convert task - TraceID: {trace_id} | TaskID: {convert_task_id}")
         
-        # TODO: 实现格式转换任务状态查询逻辑
-        # 1. 根据convert_task_id查询任务状态
-        # 2. 返回任务详细信息
+        if not self.convert_task_manager:
+            raise RuntimeError("Document convert task manager not initialized")
         
-        # 返回模拟成功响应
-        return ConvertTaskStatusResponse(
-            convert_task_id=convert_task_id,
-            status="completed",
-            download_url="https://example.com/download/converted_file.pdf",
-            created_at="2024-01-01T10:00:00",
-            completed_at=datetime.now().isoformat(),
-            source_format="docx",
-            target_format="pdf"
-        )
+        # 从任务管理器获取状态
+        task_status = await self.convert_task_manager.get_convert_task_status(convert_task_id)
+        
+        if not task_status:
+            return ConvertTaskStatusResponse(
+                convert_task_id=convert_task_id,
+                status="not_found",
+                download_url=None,
+                error_message="任务不存在",
+                created_at="",
+                completed_at=None,
+                source_format="unknown",
+                target_format="unknown"
+            )
+        
+        return ConvertTaskStatusResponse(**task_status)
     
     # ==================== 文本提取接口 ====================
     

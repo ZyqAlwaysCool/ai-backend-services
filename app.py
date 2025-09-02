@@ -276,5 +276,5 @@ if __name__ == "__main__":
         "app:app",
         host=host,
         port=port,
-        reload=True,
+        reload=False,
     )

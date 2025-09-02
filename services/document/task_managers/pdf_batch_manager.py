@@ -3,7 +3,7 @@ Description: PDF批处理任务管理器, 负责PDF批量解析任务的管理�
 Author: zyq
 Date: 2025-08-28 11:14:11
 LastEditors: zyq
-LastEditTime: 2025-08-29 17:08:19
+LastEditTime: 2025-09-01 09:22:30
 '''
 import base64
 import tempfile
@@ -21,7 +21,8 @@ from core.schemas.file_models import FileInfo
 from ..schemas import (
     PDFParserBatchRequest, PDFParserBatchResponse, 
     PDFFileItem, PDFParserRequest, PDFParserResponse,
-    PDFParserTask, PDFParserTaskStatus
+    PDFParserTask, PDFParserTaskStatus,
+    DocumentTaskTypePrefix,
 )
 from ..processors.pdf_processor import PDFProcessor
 
@@ -43,13 +44,13 @@ class PDFBatchTaskManager(BaseTaskManager):
         
         # 注册任务函数到全局注册表
         task_registry.register('_process_pdf_batch', self._process_pdf_batch)
-        self.task_id_prefix = "pdf-batch"
+        self.task_id_prefix = DocumentTaskTypePrefix.PDF_BATCH_PARSE_TASK.value
         
         # 注册collection映射和task_id前缀到全局注册表
         collection_registry.register(
             'pdf_batch_processing', 
             'pdf_batch_tasks',
-            self.task_id_prefix  # 约束task_id必须以pdf-batch开头
+            self.task_id_prefix  # 约束task_id前缀
         )
     
     def get_task_type(self) -> TaskType:

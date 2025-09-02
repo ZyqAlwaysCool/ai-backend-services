@@ -9,7 +9,7 @@ from typing import Dict, Any
 import pymupdf
 
 from core.schemas.file_models import FileInfo
-from ..schemas import PDFParserRequest, PDFParserResponse
+from ..schemas import PDFParserRequest, PDFParserResponse, DocumentTaskTypePrefix
 from ..extractors import TextExtractor, ImageExtractor, TableExtractor
 from ..utils.layout_utils import LayoutAnalyzer
 from ..utils.file_manager import FileManager
@@ -64,7 +64,7 @@ class PDFProcessor(BaseProcessor):
                 doc.close()
                 
                 # 生成任务ID和文件路径
-                task_id = self.file_manager.generate_task_id("pdf2docx")
+                task_id = self.file_manager.generate_task_id(DocumentTaskTypePrefix.PDF_PARSE_TASK.value)
                 docx_filename = f"{request.filename.rsplit('.', 1)[0]}.docx"
                 docx_path = self.file_manager.create_file_path(task_id, docx_filename)
                 

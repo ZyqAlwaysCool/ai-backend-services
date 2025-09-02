@@ -71,7 +71,6 @@ class DocumentConvertRequest(BaseModel):
     input_type: str = Field(..., description="输入类型: file | base64")
     file_data: Optional[str] = Field(None, description="文件base64编码")
     filename: str = Field(..., description="文件名")
-    file_size: Optional[int] = Field(None, description="文件大小(字节)")
     source_format: str = Field(..., description="源格式: docx | xlsx | markdown")
     target_format: str = Field(..., description="目标格式: pdf | docx | markdown")
     convert_options: Dict = Field(
@@ -179,3 +178,12 @@ class DocumentServiceStatus(BaseModel):
     version: str = Field(..., description="服务版本")
     enabled: bool = Field(..., description="是否启用")
     enabled_endpoints: List[str] = Field(..., description="启用的端点列表")
+
+
+class DocumentTaskTypePrefix(str, Enum):
+    """文档任务类型前缀枚举"""
+    PDF_BATCH_PARSE_TASK = "pdf-parser-batch-task" # pdf批量解析(批处理任务前缀)
+    PDF_PARSE_TASK = "pdf-to-docx-task" # pdf转换docx(单任务前缀)
+    CONVERT_TASK = "convert-task" # 文档格式转换
+    TEXT_EXTRACT_BATCH_TASK = "text-extract-batch-task" # 文本提取批处理(批处理任务前缀)
+    
