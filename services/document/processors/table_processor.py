@@ -151,7 +151,6 @@ class TableProcessor(BaseProcessor):
             
             html_content = '\n'.join(html_parts)
             
-            logger.info(f"Excel表格转HTML成功: 工作表数={len(excel_file.sheet_names)}")
             return html_content
             
         except ImportError:
@@ -180,7 +179,6 @@ class TableProcessor(BaseProcessor):
             # 生成下载链接
             download_url = f"/document/extract-download?task_id={task_id}"
             
-            logger.info(f"Excel表格转HTML文件成功: {output_path}")
             return download_url
             
         except Exception as e:

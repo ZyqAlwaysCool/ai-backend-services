@@ -121,7 +121,6 @@ class TextProcessor(BaseProcessor):
             if not extracted_text:
                 extracted_text = "文档中未找到可提取的文本内容"
             
-            logger.info(f"DOCX文本提取成功: 文本长度={len(extracted_text)}")
             return extracted_text
             
         except ImportError:

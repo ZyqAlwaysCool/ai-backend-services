@@ -1,6 +1,6 @@
 # 开发环境配置
 log:
-  level: DEBUG
+  level: INFO
   dir: logs
   format: "{time} | {level} | {message}"
   retention: "7 days"

@@ -18,7 +18,7 @@ document_router = APIRouter(tags=["文档服务"])
 async def pdf_parser(http_request: Request):
     """PDF解析接口"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Received PDF parser request - TraceID: {trace_id}")
+    logger.info(f"PDF parser request started - TraceID: {trace_id}")
     
     try:
         # 从中间件获取处理后的数据
@@ -51,6 +51,7 @@ async def pdf_parser(http_request: Request):
         # 调用业务逻辑，传入临时文件路径和文件信息
         response = await handlers.pdf_parser(request, temp_file_path, file_info, trace_id)
         
+        logger.info(f"PDF parser request completed - TraceID: {trace_id}")
         return BaseResponse.success(
             data=response.model_dump(),
             trace_id=trace_id
@@ -76,7 +77,7 @@ async def pdf_parser(http_request: Request):
 async def pdf_parser_batch(request: PDFParserBatchRequest, http_request: Request):
     """PDF批量解析接口（异步响应）"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Received PDF parser batch request - TraceID: {trace_id}")
+    logger.info(f"PDF parser batch request started - TraceID: {trace_id}")
     
     try:
         # 从service_registry获取document服务的handlers实例
@@ -94,6 +95,7 @@ async def pdf_parser_batch(request: PDFParserBatchRequest, http_request: Request
         # 调用业务逻辑
         response = await handlers.pdf_parser_batch(request, trace_id)
         
+        logger.info(f"PDF parser batch request completed - TraceID: {trace_id}")
         return BaseResponse.success(
             data=response.model_dump(),
             trace_id=trace_id
@@ -112,7 +114,7 @@ async def pdf_parser_batch(request: PDFParserBatchRequest, http_request: Request
 async def document_convert(http_request: Request):
     """文档格式转换接口"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Received document convert request - TraceID: {trace_id}")
+    logger.info(f"Document convert request started - TraceID: {trace_id}")
     
     try:
         # 从中间件获取处理后的数据
@@ -145,6 +147,7 @@ async def document_convert(http_request: Request):
         # 调用业务逻辑，传入临时文件路径和文件信息
         response = await handlers.document_convert(request, temp_file_path, file_info, trace_id)
         
+        logger.info(f"Document convert request completed - TraceID: {trace_id}")
         return BaseResponse.success(
             data=response.model_dump(),
             trace_id=trace_id
@@ -163,7 +166,7 @@ async def document_convert(http_request: Request):
 async def query_convert_task(convert_task_id: str, http_request: Request):
     """查询格式转换任务状态接口"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Received query convert task request - TraceID: {trace_id} | TaskID: {convert_task_id}")
+    logger.info(f"Query convert task started - TraceID: {trace_id}")
     
     try:
         # 从service_registry获取document服务的handlers实例
@@ -181,6 +184,7 @@ async def query_convert_task(convert_task_id: str, http_request: Request):
         # 调用业务逻辑
         response = await handlers.query_convert_task(convert_task_id, trace_id)
         
+        logger.info(f"Query convert task completed - TraceID: {trace_id}")
         return BaseResponse.success(
             data=response.model_dump(),
             trace_id=trace_id
@@ -199,7 +203,7 @@ async def query_convert_task(convert_task_id: str, http_request: Request):
 async def text_extract(http_request: Request):
     """文本提取接口"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Received text extract request - TraceID: {trace_id}")
+    logger.info(f"Text extract started - TraceID: {trace_id}")
     
     try:
         # 从中间件获取处理后的数据
@@ -232,6 +236,7 @@ async def text_extract(http_request: Request):
         # 调用业务逻辑，传入临时文件路径和文件信息
         response = await handlers.text_extract(request, temp_file_path, file_info, trace_id)
         
+        logger.info(f"Text extract completed - TraceID: {trace_id}")
         return BaseResponse.success(
             data=response.model_dump(),
             trace_id=trace_id
@@ -250,7 +255,7 @@ async def text_extract(http_request: Request):
 async def text_extract_batch(request: TextExtractBatchRequest, http_request: Request):
     """文本提取批处理接口（异步响应）"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Received text extract batch request - TraceID: {trace_id}")
+    logger.info(f"Text extract batch started - TraceID: {trace_id}")
     
     try:
         # 从service_registry获取document服务的handlers实例
@@ -268,6 +273,7 @@ async def text_extract_batch(request: TextExtractBatchRequest, http_request: Req
         # 调用业务逻辑
         response = await handlers.text_extract_batch(request, trace_id)
         
+        logger.info(f"Text extract batch completed - TraceID: {trace_id}")
         return BaseResponse.success(
             data=response.model_dump(),
             trace_id=trace_id
@@ -286,7 +292,7 @@ async def text_extract_batch(request: TextExtractBatchRequest, http_request: Req
 async def query_extract_task(batch_task_id: str, http_request: Request):
     """查询文本提取批处理任务状态接口"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Received query extract task request - TraceID: {trace_id} | BatchTaskID: {batch_task_id}")
+    logger.info(f"Query extract task started - TraceID: {trace_id}")
     
     try:
         # 从service_registry获取document服务的handlers实例
@@ -304,6 +310,7 @@ async def query_extract_task(batch_task_id: str, http_request: Request):
         # 调用业务逻辑
         response = await handlers.query_extract_task(batch_task_id, trace_id)
         
+        logger.info(f"Query extract task completed - TraceID: {trace_id}")
         return BaseResponse.success(
             data=response.model_dump(),
             trace_id=trace_id
@@ -322,7 +329,7 @@ async def query_extract_task(batch_task_id: str, http_request: Request):
 async def query_pdf_parser_task(pdf_parser_batch_task_id: str, http_request: Request):
     """查询PDF批量解析任务状态接口"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Received query PDF parser task request - TraceID: {trace_id} | TaskID: {pdf_parser_batch_task_id}")
+    logger.info(f"Query PDF parser task started - TraceID: {trace_id}")
     
     try:
         # 从service_registry获取document服务的handlers实例
@@ -347,6 +354,7 @@ async def query_pdf_parser_task(pdf_parser_batch_task_id: str, http_request: Req
         # 调用业务逻辑
         response = await handlers.query_pdf_parser_task(pdf_parser_batch_task_id, trace_id)
         
+        logger.info(f"Query PDF parser task completed - TraceID: {trace_id}")
         return BaseResponse.success(
             data=response.model_dump(),
             trace_id=trace_id
@@ -365,7 +373,7 @@ async def query_pdf_parser_task(pdf_parser_batch_task_id: str, http_request: Req
 async def table_extract(http_request: Request):
     """表格提取接口（同步接口）"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Received table extract request - TraceID: {trace_id}")
+    logger.info(f"Table extract started - TraceID: {trace_id}")
     
     try:
         # 从中间件获取处理后的数据
@@ -398,6 +406,7 @@ async def table_extract(http_request: Request):
         # 调用业务逻辑，传入临时文件路径和文件信息
         response = await handlers.table_extract(request, temp_file_path, file_info, trace_id)
         
+        logger.info(f"Table extract completed - TraceID: {trace_id}")
         return BaseResponse.success(
             data=response.model_dump(),
             trace_id=trace_id
@@ -416,7 +425,7 @@ async def table_extract(http_request: Request):
 async def pdf_parser_download(task_id: str, http_request: Request):
     """PDF解析结果文件下载接口"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Received file download request - TraceID: {trace_id} | TaskID: {task_id}")
+    logger.info(f"PDF parser download started - TraceID: {trace_id}")
     
     try:
         # 从service_registry获取document服务的handlers实例
@@ -458,8 +467,8 @@ async def pdf_parser_download(task_id: str, http_request: Request):
                 trace_id=trace_id
             )
         
-        logger.info(f"File download initiated - TraceID: {trace_id} | File: {file_info['filename']}")
         
+        logger.info(f"PDF parser download completed - TraceID: {trace_id}")
         # 返回文件响应
         return FileResponse(
             path=file_path,
@@ -480,7 +489,7 @@ async def pdf_parser_download(task_id: str, http_request: Request):
 async def convert_download(task_id: str, http_request: Request):
     """文档转换结果文件下载接口"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Received convert file download request - TraceID: {trace_id} | TaskID: {task_id}")
+    logger.info(f"Convert download started - TraceID: {trace_id}")
     
     try:
         # 从service_registry获取document服务的handlers实例
@@ -532,7 +541,6 @@ async def convert_download(task_id: str, http_request: Request):
                 trace_id=trace_id
             )
         
-        logger.info(f"Convert file download initiated - TraceID: {trace_id} | File: {file_info['filename']}")
         
         # 根据文件扩展名确定media_type
         filename = file_info['filename']
@@ -545,6 +553,7 @@ async def convert_download(task_id: str, http_request: Request):
         else:
             media_type = 'application/octet-stream'
         
+        logger.info(f"Convert download completed - TraceID: {trace_id}")
         # 返回文件响应
         return FileResponse(
             path=file_path,
@@ -565,7 +574,7 @@ async def convert_download(task_id: str, http_request: Request):
 async def extract_download(task_id: str, http_request: Request):
     """表格提取结果文件下载接口"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Received extract file download request - TraceID: {trace_id} | TaskID: {task_id}")
+    logger.info(f"Extract download started - TraceID: {trace_id}")
     
     try:
         # 从service_registry获取document服务的handlers实例
@@ -607,8 +616,8 @@ async def extract_download(task_id: str, http_request: Request):
                 trace_id=trace_id
             )
         
-        logger.info(f"Extract file download initiated - TraceID: {trace_id} | File: {file_info['filename']}")
         
+        logger.info(f"Extract download completed - TraceID: {trace_id}")
         # 返回HTML文件响应
         return FileResponse(
             path=file_path,

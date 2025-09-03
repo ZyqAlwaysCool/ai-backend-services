@@ -40,8 +40,8 @@ async def _stream_wrapper(generator, trace_id: str):
 async def chat(request: ChatRequest, http_request: Request):
     """对话接口（非流式响应，根据history字段判断单轮/多轮）"""
     trace_id = str(uuid.uuid4())
+    logger.info(f"Chat started - TraceID: {trace_id}")
     conversation_type = "multi-turn" if len(request.history) > 0 else "single-turn"
-    logger.info(f"Received {conversation_type} chat request - TraceID: {trace_id}")
     
     try:
         # 从service_registry获取chat服务的handlers实例
@@ -57,6 +57,7 @@ async def chat(request: ChatRequest, http_request: Request):
         
         response = await handlers.chat(request, trace_id)
         
+        logger.info(f"Chat completed - TraceID: {trace_id}")
         return BaseResponse.success(
             data=response.dict(),
             trace_id=trace_id
@@ -89,8 +90,8 @@ async def chat(request: ChatRequest, http_request: Request):
 async def chat_stream(request: ChatRequest, http_request: Request):
     """对话接口（流式响应，根据history字段判断单轮/多轮）"""
     trace_id = str(uuid.uuid4())
+    logger.info(f"Chat stream started - TraceID: {trace_id}")
     conversation_type = "multi-turn" if len(request.history) > 0 else "single-turn"
-    logger.info(f"Received {conversation_type} stream chat request - TraceID: {trace_id}")
     
     try:
         # 从service_registry获取chat服务的handlers实例
@@ -110,6 +111,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
         # 获取流式生成器
         stream_generator = handlers.chat_stream(request, trace_id)
         
+        logger.info(f"Chat stream completed - TraceID: {trace_id}")
         # 返回流式响应 - 原始chunk块
         return StreamingResponse(
             _stream_wrapper(stream_generator, trace_id),
@@ -157,7 +159,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
 async def get_enabled_models(http_request: Request):
     """获取启用的模型列表"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Received get enabled models request - TraceID: {trace_id}")
+    logger.info(f"Get enabled models started - TraceID: {trace_id}")
     
     try:
         # 从service_registry获取chat服务的handlers实例
@@ -173,6 +175,7 @@ async def get_enabled_models(http_request: Request):
         
         enabled_models = handlers.get_enabled_models()
         
+        logger.info(f"Get enabled models completed - TraceID: {trace_id}")
         return BaseResponse.success(
             data={"models": enabled_models},
             trace_id=trace_id

@@ -43,7 +43,6 @@ class ServiceRegistry:
     
     async def _register_service(self, service_name: str):
         """注册单个服务"""
-        logger.info(f"Registering service: {service_name}")
         
         # 动态导入服务模块
         module_path = f"services.{service_name}.service"
@@ -69,7 +68,6 @@ class ServiceRegistry:
         
         # 注册服务
         self.services[service_name] = service_instance
-        logger.info(f"Successfully registered service: {service_name}")
     
     def get_enabled_services(self) -> Dict[str, BaseService]:
         """获取所有启用的服务"""

@@ -93,12 +93,10 @@ class ConvertProcessor(BaseProcessor):
             # 高级转换：python-docx → HTML → weasyprint
             return await self._docx_to_pdf_advanced(source_path, file_info, request, trace_id, task_id)
         except Exception as e:
-            logger.warning(f"DOCX→PDF高级转换失败: {e}")
             try:
                 # 简化转换：基础HTML → weasyprint
                 return await self._docx_to_pdf_simple(source_path, file_info, request, trace_id, task_id)
             except Exception as e2:
-                logger.warning(f"DOCX→PDF简化转换失败: {e2}")
                 # 基础转换：纯文本PDF
                 return await self._docx_to_pdf_fallback(source_path, file_info, request, trace_id, task_id)
     
@@ -132,7 +130,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"DOCX→PDF高级转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"docx→pdf conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except ImportError as e:
@@ -170,7 +170,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"DOCX→PDF简化转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"docx→pdf conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -227,7 +229,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"DOCX→PDF基础转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"docx→pdf conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -240,12 +244,10 @@ class ConvertProcessor(BaseProcessor):
             # 高级转换：保持格式
             return await self._docx_to_markdown_advanced(source_path, file_info, request, trace_id, task_id)
         except Exception as e:
-            logger.warning(f"DOCX→Markdown高级转换失败: {e}")
             try:
                 # 简化转换：基础格式
                 return await self._docx_to_markdown_simple(source_path, file_info, request, trace_id, task_id)
             except Exception as e2:
-                logger.warning(f"DOCX→Markdown简化转换失败: {e2}")
                 # 基础转换：纯文本
                 return await self._docx_to_markdown_fallback(source_path, file_info, request, trace_id, task_id)
     
@@ -288,6 +290,9 @@ class ConvertProcessor(BaseProcessor):
         # 注册文件到文件管理器
         self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
         
+        # 转换成功日志
+        logger.info(f"docx→markdown conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+        
         return output_path
     
     async def _docx_to_markdown_simple(self, source_path: str, file_info: FileInfo, request: DocumentConvertRequest, trace_id: str, task_id: str) -> str:
@@ -312,6 +317,9 @@ class ConvertProcessor(BaseProcessor):
         # 注册文件到文件管理器
         self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
         
+        # 转换成功日志
+        logger.info(f"docx→markdown conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+        
         return output_path
     
     async def _docx_to_markdown_fallback(self, source_path: str, file_info: FileInfo, request: DocumentConvertRequest, trace_id: str, task_id: str) -> str:
@@ -325,11 +333,9 @@ class ConvertProcessor(BaseProcessor):
         try:
             return await self._xlsx_to_pdf_advanced(source_path, file_info, request, trace_id, task_id)
         except Exception as e:
-            logger.warning(f"XLSX→PDF高级转换失败: {e}")
             try:
                 return await self._xlsx_to_pdf_simple(source_path, file_info, request, trace_id, task_id)
             except Exception as e2:
-                logger.warning(f"XLSX→PDF简化转换失败: {e2}")
                 return await self._xlsx_to_pdf_fallback(source_path, file_info, request, trace_id, task_id)
     
     async def _convert_xlsx_to_docx(self, source_path: str, file_info: FileInfo, request: DocumentConvertRequest, trace_id: str, task_id: str = None) -> str:
@@ -337,11 +343,9 @@ class ConvertProcessor(BaseProcessor):
         try:
             return await self._xlsx_to_docx_advanced(source_path, file_info, request, trace_id, task_id)
         except Exception as e:
-            logger.warning(f"XLSX→DOCX高级转换失败: {e}")
             try:
                 return await self._xlsx_to_docx_simple(source_path, file_info, request, trace_id, task_id)
             except Exception as e2:
-                logger.warning(f"XLSX→DOCX简化转换失败: {e2}")
                 return await self._xlsx_to_docx_fallback(source_path, file_info, request, trace_id, task_id)
     
     async def _convert_xlsx_to_markdown(self, source_path: str, file_info: FileInfo, request: DocumentConvertRequest, trace_id: str, task_id: str = None) -> str:
@@ -349,11 +353,9 @@ class ConvertProcessor(BaseProcessor):
         try:
             return await self._xlsx_to_markdown_advanced(source_path, file_info, request, trace_id, task_id)
         except Exception as e:
-            logger.warning(f"XLSX→Markdown高级转换失败: {e}")
             try:
                 return await self._xlsx_to_markdown_simple(source_path, file_info, request, trace_id, task_id)
             except Exception as e2:
-                logger.warning(f"XLSX→Markdown简化转换失败: {e2}")
                 return await self._xlsx_to_markdown_fallback(source_path, file_info, request, trace_id, task_id)
     
     async def _xlsx_to_pdf_advanced(self, source_path: str, file_info: FileInfo, request: DocumentConvertRequest, trace_id: str, task_id: str = None) -> str:
@@ -387,7 +389,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"XLSX→PDF高级转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"xlsx→pdf conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -424,7 +428,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"XLSX→PDF简化转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"xlsx→pdf conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -482,7 +488,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"XLSX→PDF基础转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"xlsx→pdf conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -539,7 +547,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"XLSX→DOCX高级转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"xlsx→docx conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -583,7 +593,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"XLSX→DOCX简化转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"xlsx→docx conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -616,7 +628,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"XLSX→DOCX基础转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"xlsx→docx conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -666,7 +680,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"XLSX→Markdown高级转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"xlsx→markdown conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -704,7 +720,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"XLSX→Markdown简化转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"xlsx→markdown conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -742,7 +760,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"XLSX→Markdown基础转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"xlsx→markdown conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -838,7 +858,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"Markdown→PDF高级转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"markdown→pdf conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -898,7 +920,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"Markdown→PDF简化转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"markdown→pdf conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -955,7 +979,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"Markdown→PDF基础转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"markdown→pdf conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -1005,7 +1031,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"Markdown→DOCX高级转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"markdown→docx conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -1047,7 +1075,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"Markdown→DOCX简化转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"markdown→docx conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:
@@ -1079,7 +1109,9 @@ class ConvertProcessor(BaseProcessor):
             # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
             
-            logger.info(f"Markdown→DOCX基础转换成功: {output_path}")
+            # 转换成功日志
+            logger.info(f"markdown→docx conversion completed - TraceID: {trace_id} | Output: {output_filename}")
+            
             return output_path
             
         except Exception as e:

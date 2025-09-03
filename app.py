@@ -64,7 +64,6 @@ async def lifespan(app: FastAPI):
     try:
         await service_registry.discover_and_register_services()
         enabled_services = list(service_registry.get_enabled_services().keys())
-        logger.info(f"Enabled services: {enabled_services}")
         
         # 注册所有服务路由
         for service_name, service in service_registry.get_enabled_services().items():
@@ -76,18 +75,15 @@ async def lifespan(app: FastAPI):
                 )
         
         enabled_service_count = len(service_registry.get_enabled_services())
-        logger.info(f"Registered {enabled_service_count} service routes")
         
         # 将服务注册器存储到app状态中，供路由访问
         app.state.service_registry = service_registry
         
         # 注册认证路由
         app.include_router(auth_router)
-        logger.info("Auth routes registered successfully")
         
         # 将认证服务存储到app状态供中间件使用
         app.state.auth_service = auth_service
-        logger.info("Auth service stored to app state")
         
     except Exception as e:
         logger.error(f"Service initialization failed: {str(e)}")
@@ -99,7 +95,6 @@ async def lifespan(app: FastAPI):
         worker_success = await worker_manager.start_worker()
         
         if worker_success:
-            logger.info("ARQ Worker started successfully")
             # 将worker管理器存储到app状态
             app.state.worker_manager = worker_manager
         else:
@@ -118,15 +113,12 @@ async def lifespan(app: FastAPI):
     try:
         # 首先停止Worker
         if hasattr(app.state, 'worker_manager'):
-            logger.info("Stopping ARQ Worker...")
             await app.state.worker_manager.stop_worker()
-            logger.info("ARQ Worker stopped")
         
         # 然后停止其他服务
         for service in service_registry.get_enabled_services().values():
             if hasattr(service, 'shutdown'):
                 await service.shutdown()
-        logger.info("All services shutdown completed")
     except Exception as e:
         logger.error(f"Error occurred during service shutdown: {str(e)}")
 

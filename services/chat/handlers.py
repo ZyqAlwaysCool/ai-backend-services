@@ -35,13 +35,11 @@ class ChatHandlers:
         # 协议适配器缓存
         self._adapters = {}
         
-        logger.info(f"Chat handlers initialized with models: {list(self.models_info.keys())}")
     
     async def initialize(self):
         """初始化处理器"""
         # 预初始化所有配置的模型适配器，但不进行健康检查
         await self._initialize_adapters()
-        logger.info("Chat handlers initialized")
     
     async def _initialize_adapters(self):
         """初始化协议适配器"""
@@ -58,7 +56,6 @@ class ChatHandlers:
                     )
                     
                     self._adapters[model_name] = adapter
-                    logger.info(f"Initialized {protocol} adapter for model: {model_name}")
                     
                 except Exception as e:
                     logger.error(f"Failed to initialize adapter for model {model_name}: {str(e)}")
@@ -114,8 +111,6 @@ class ChatHandlers:
         is_multi_turn = len(request.history) > 0
         conversation_type = "多轮" if is_multi_turn else "单轮"
         
-        logger.info(f"{conversation_type} conversation - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}..." + 
-                   (f" | History count: {len(request.history)}" if is_multi_turn else ""))
         
         try:
             # 参数验证
@@ -154,8 +149,6 @@ class ChatHandlers:
         is_multi_turn = len(request.history) > 0
         conversation_type = "多轮" if is_multi_turn else "单轮"
         
-        logger.info(f"{conversation_type} stream conversation - TraceID: {trace_id} | Model: {request.model} | Query: {request.query[:50]}..." + 
-                   (f" | History count: {len(request.history)}" if is_multi_turn else ""))
         
         try:
             # 参数验证
