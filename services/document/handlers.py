@@ -72,7 +72,7 @@ class DocumentHandlers:
             self.config
         )
         
-        logger.info("Document handlers initialized with task managers")
+        logger.info("Document handlers initialized")
     
     # ==================== PDF处理接口 ====================
     
@@ -82,7 +82,7 @@ class DocumentHandlers:
     
     async def pdf_parser_batch(self, request: PDFParserBatchRequest, trace_id: str = None) -> PDFParserBatchResponse:
         """PDF批量解析处理"""
-        logger.info(f"PDF parser batch request - TraceID: {trace_id} | Files count: {len(request.files)}")
+        logger.info(f"PDF batch request started files={len(request.files)} | TraceID: {trace_id}")
         
         if not self.pdf_batch_manager:
             raise RuntimeError("PDF batch task manager not initialized")
@@ -92,15 +92,15 @@ class DocumentHandlers:
             return await self.pdf_batch_manager.submit_pdf_batch_task(request, trace_id)
         except RuntimeError as e:
             # 捕获任务管理器的运行时错误，包括Worker不可用
-            logger.error(f"PDF batch task submission failed - TraceID: {trace_id} | Error: {str(e)}")
+            logger.error(f"PDF batch task submission failed error={str(e)} | TraceID: {trace_id}")
             raise RuntimeError(f"批量处理服务暂时不可用，请稍后重试。如果问题持续存在，请联系系统管理员。详细错误：{str(e)}")
         except Exception as e:
-            logger.error(f"Unexpected error in PDF batch processing - TraceID: {trace_id} | Error: {str(e)}")
+            logger.error(f"PDF batch processing unexpected error error={str(e)} | TraceID: {trace_id}")
             raise RuntimeError(f"处理请求时发生未知错误，请联系系统管理员。")
     
     async def query_pdf_parser_task(self, task_id: str, trace_id: str = None) -> PDFParserTaskStatusResponse:
         """查询PDF批量解析任务状态"""
-        logger.info(f"Query PDF parser task - TraceID: {trace_id} | TaskID: {task_id}")
+        logger.info(f"Query PDF parser task task_id={task_id} | TraceID: {trace_id}")
         
         if not self.pdf_batch_manager:
             raise RuntimeError("PDF batch task manager not initialized")
@@ -127,7 +127,7 @@ class DocumentHandlers:
     
     async def document_convert(self, request: DocumentConvertRequest, temp_file_path: str, file_info: FileInfo, trace_id: str = None) -> DocumentConvertResponse:
         """文档格式转换处理"""
-        logger.info(f"Document convert request - TraceID: {trace_id} | Source: {request.source_format} | Target: {request.target_format}")
+        logger.info(f"Document convert request started source={request.source_format} target={request.target_format} | TraceID: {trace_id}")
         
         # 1. 前置校验：相同格式拦截
         if request.source_format == request.target_format:
@@ -151,7 +151,7 @@ class DocumentHandlers:
     
     async def query_convert_task(self, convert_task_id: str, trace_id: str = None) -> ConvertTaskStatusResponse:
         """查询格式转换任务状态"""
-        logger.info(f"Query convert task - TraceID: {trace_id} | TaskID: {convert_task_id}")
+        logger.info(f"Query convert task task_id={convert_task_id} | TraceID: {trace_id}")
         
         if not self.convert_task_manager:
             raise RuntimeError("Document convert task manager not initialized")
@@ -177,14 +177,14 @@ class DocumentHandlers:
     
     async def text_extract(self, request: TextExtractRequest, temp_file_path: str, file_info: FileInfo, trace_id: str = None) -> TextExtractResponse:
         """文本提取处理"""
-        logger.info(f"Text extract request - TraceID: {trace_id} | Filename: {request.filename} | TempFile: {temp_file_path}")
+        logger.info(f"Text extract request started filename={request.filename} temp_file={temp_file_path} | TraceID: {trace_id}")
         
         # 调用文本处理器进行提取
         return await self.text_processor.process(request, temp_file_path, file_info, trace_id)
     
     async def text_extract_batch(self, request: TextExtractBatchRequest, trace_id: str = None) -> TextExtractBatchResponse:
         """文本提取批处理处理"""
-        logger.info(f"Text extract batch request - TraceID: {trace_id} | Files count: {len(request.files)}")
+        logger.info(f"Text extract batch request started files={len(request.files)} | TraceID: {trace_id}")
         
         if not self.text_extract_batch_manager:
             raise RuntimeError("Text extract batch task manager not initialized")
@@ -193,15 +193,15 @@ class DocumentHandlers:
             # 提交批处理任务到任务管理器
             return await self.text_extract_batch_manager.submit_text_extract_batch_task(request, trace_id)
         except RuntimeError as e:
-            logger.error(f"文本提取批处理任务提交失败 - TraceID: {trace_id} | Error: {str(e)}")
+            logger.error(f"Text extract batch task submission failed error={str(e)} | TraceID: {trace_id}")
             raise RuntimeError(f"批量处理服务暂时不可用，请稍后重试。详细错误：{str(e)}")
         except Exception as e:
-            logger.error(f"文本提取批处理请求处理异常 - TraceID: {trace_id} | Error: {str(e)}")
+            logger.error(f"Text extract batch request unexpected error error={str(e)} | TraceID: {trace_id}")
             raise RuntimeError(f"处理请求时发生未知错误，请联系系统管理员。")
     
     async def query_extract_task(self, batch_task_id: str, trace_id: str = None) -> ExtractTaskStatusResponse:
         """查询文本提取批处理任务状态"""
-        logger.info(f"Query extract task - TraceID: {trace_id} | BatchTaskID: {batch_task_id}")
+        logger.info(f"Query extract task batch_task_id={batch_task_id} | TraceID: {trace_id}")
         
         if not self.text_extract_batch_manager:
             raise RuntimeError("Text extract batch task manager not initialized")
@@ -227,7 +227,7 @@ class DocumentHandlers:
     
     async def table_extract(self, request: TableExtractRequest, temp_file_path: str, file_info: FileInfo, trace_id: str = None) -> TableExtractResponse:
         """表格提取处理"""
-        logger.info(f"Table extract request - TraceID: {trace_id} | Filename: {request.filename} | TempFile: {temp_file_path}")
+        logger.info(f"Table extract request started filename={request.filename} temp_file={temp_file_path} | TraceID: {trace_id}")
         
         # 调用表格处理器进行提取
         return await self.table_processor.process(request, temp_file_path, file_info, trace_id)

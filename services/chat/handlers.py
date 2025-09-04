@@ -58,7 +58,7 @@ class ChatHandlers:
                     self._adapters[model_name] = adapter
                     
                 except Exception as e:
-                    logger.error(f"Failed to initialize adapter for model {model_name}: {str(e)}")
+                    logger.error(f"Failed to initialize adapter model={model_name} error={str(e)}")
     
     
     def _validate_model(self, model: str):
@@ -135,7 +135,7 @@ class ChatHandlers:
             return response
                 
         except Exception as e:
-            logger.error(f"{conversation_type} conversation failed - TraceID: {trace_id} | Error: {str(e)}")
+            logger.error(f"{conversation_type} conversation failed error={str(e)} | TraceID: {trace_id}")
             if isinstance(e, (ValidationException, BaseBusinessException)):
                 raise
             else:
@@ -172,7 +172,7 @@ class ChatHandlers:
                 yield chunk
                 
         except Exception as e:
-            logger.error(f"{conversation_type} stream conversation failed - TraceID: {trace_id} | Error: {str(e)}")
+            logger.error(f"{conversation_type} stream conversation failed error={str(e)} | TraceID: {trace_id}")
             if isinstance(e, (ValidationException, BaseBusinessException)):
                 raise
             else:

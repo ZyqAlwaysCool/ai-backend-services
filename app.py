@@ -30,11 +30,11 @@ from loguru import logger
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """生命周期管理器"""
-    logger.info("Starting AI service platform...")
+    logger.info("AI service platform starting")
     
     # 启动时配置验证
     if not validate_config_on_startup():
-        logger.error("Configuration validation failed, application startup aborted")
+        logger.error("Configuration validation failed, startup aborted")
         raise SystemExit(1)
     
     # 初始化认证服务
@@ -54,10 +54,10 @@ async def lifespan(app: FastAPI):
         # 注入到路由模块
         set_auth_service(auth_service)
         
-        logger.info("Auth service initialized successfully")
+        logger.info("Auth service initialized")
         
     except Exception as e:
-        logger.error(f"Auth service initialization failed: {str(e)}")
+        logger.error(f"Auth service initialization failed error={str(e)}")
         raise SystemExit(1)
     
     # 发现并注册所有启用的服务
@@ -86,7 +86,7 @@ async def lifespan(app: FastAPI):
         app.state.auth_service = auth_service
         
     except Exception as e:
-        logger.error(f"Service initialization failed: {str(e)}")
+        logger.error(f"Service initialization failed error={str(e)}")
         raise SystemExit(1)
     
     # 启动ARQ Worker
@@ -98,18 +98,18 @@ async def lifespan(app: FastAPI):
             # 将worker管理器存储到app状态
             app.state.worker_manager = worker_manager
         else:
-            logger.warning("ARQ Worker failed to start, task processing will be unavailable")
+            logger.warning("ARQ Worker start failed, task processing unavailable")
             
     except Exception as e:
-        logger.error(f"ARQ Worker initialization failed: {str(e)}")
+        logger.error(f"ARQ Worker initialization failed error={str(e)}")
         # 不终止应用启动，但记录错误
-        logger.warning("Continuing without task worker - batch processing will be unavailable")
+        logger.warning("Continuing without task worker, batch processing unavailable")
     
-    logger.info("AI service platform started successfully, all components ready")
+    logger.info("AI service platform started successfully")
     yield
     
     # 关闭时清理资源
-    logger.info("AI service platform is shutting down...")
+    logger.info("AI service platform shutting down")
     try:
         # 首先停止Worker
         if hasattr(app.state, 'worker_manager'):
@@ -120,7 +120,7 @@ async def lifespan(app: FastAPI):
             if hasattr(service, 'shutdown'):
                 await service.shutdown()
     except Exception as e:
-        logger.error(f"Error occurred during service shutdown: {str(e)}")
+        logger.error(f"Service shutdown error error={str(e)}")
 
 
 # 创建FastAPI应用

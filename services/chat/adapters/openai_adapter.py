@@ -95,7 +95,7 @@ class OpenAIProtocolAdapter(LLMProtocolAdapter):
             )
             
         except Exception as e:
-            logger.error(f"OpenAI protocol chat completion failed for model {self.model_name}: {str(e)}")
+            logger.error(f"OpenAI chat completion failed model={self.model_name} error={str(e)}")
             raise BaseBusinessException(
                 code=COMMON_ERROR_REQUEST_PARSE_ERROR,
                 message=f"模型 {self.model_name} 调用失败: {str(e)}"
@@ -132,7 +132,7 @@ class OpenAIProtocolAdapter(LLMProtocolAdapter):
             )
             
         except Exception as e:
-            logger.error(f"OpenAI protocol stream completion failed for model {self.model_name}: {str(e)}")
+            logger.error(f"OpenAI stream completion failed model={self.model_name} error={str(e)}")
             raise BaseBusinessException(
                 code=COMMON_ERROR_REQUEST_PARSE_ERROR,
                 message=f"模型 {self.model_name} 流式调用失败: {str(e)}"
@@ -153,5 +153,5 @@ class OpenAIProtocolAdapter(LLMProtocolAdapter):
             return bool(response.content)
             
         except Exception as e:
-            logger.warning(f"Health check failed for model {self.model_name}: {str(e)}")
+            logger.warning(f"Health check failed model={self.model_name} error={str(e)}")
             return False

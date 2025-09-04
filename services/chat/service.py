@@ -42,10 +42,10 @@ class ChatService(BaseService):
             self.handlers = ChatHandlers(self.config)
             await self.handlers.initialize()
             
-            logger.info("Chat service initialized successfully")
+            logger.info("Chat service initialized")
             
         except Exception as e:
-            logger.error(f"Chat service initialization failed: {str(e)}")
+            logger.error(f"Chat service initialization failed error={str(e)}")
             raise
     
     async def health_check(self) -> bool:
@@ -85,4 +85,4 @@ class ChatService(BaseService):
                 # 这里可以添加清理逻辑，比如关闭连接、清理缓存等
                 logger.info("Chat service cleanup completed")
         except Exception as e:
-            logger.error(f"Error occurred during Chat service shutdown: {str(e)}")
+            logger.error(f"Chat service shutdown error error={str(e)}")

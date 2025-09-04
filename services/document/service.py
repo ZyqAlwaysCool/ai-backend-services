@@ -36,7 +36,7 @@ class DocumentService(BaseService):
         
         self.handlers = DocumentHandlers(self.config)
         await self.handlers.initialize()
-        logger.info("Document service initialized successfully")
+        logger.info("Document service initialized")
     
     async def health_check(self) -> bool:
         if not self.enabled:

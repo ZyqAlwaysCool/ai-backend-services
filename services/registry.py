@@ -38,7 +38,7 @@ class ServiceRegistry:
             try:
                 await self._register_service(service_name)
             except Exception as e:
-                logger.error(f"Failed to register service {service_name}: {str(e)}")
+                logger.error(f"Service registration failed service={service_name} error={str(e)}")
                 continue
     
     async def _register_service(self, service_name: str):
@@ -60,7 +60,7 @@ class ServiceRegistry:
         
         # 检查服务是否启用
         if not service_instance.enabled:
-            logger.warning(f"Service {service_name} is disabled, skipping registration")
+            logger.warning(f"Service disabled, skipping registration service={service_name}")
             return
         
         # 初始化服务
@@ -94,7 +94,7 @@ class ServiceRegistry:
             try:
                 results[name] = await service.health_check()
             except Exception as e:
-                logger.error(f"Health check failed for {name}: {str(e)}")
+                logger.error(f"Health check failed service={name} error={str(e)}")
                 results[name] = False
         return results
 

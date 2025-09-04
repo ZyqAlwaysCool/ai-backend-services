@@ -25,7 +25,7 @@ async def _stream_wrapper(generator, trace_id: str):
             # 直接返回原始StreamChatChunk对象的字典形式
             yield f"data: {chunk.json()}\n\n"
     except Exception as e:
-        logger.error(f"Stream processing error - TraceID: {trace_id} | Error: {str(e)}")
+        logger.error(f"Stream processing error error={str(e)} | TraceID: {trace_id}")
         # 流式错误也返回原始格式
         error_chunk = {
             "content": "",
@@ -40,7 +40,7 @@ async def _stream_wrapper(generator, trace_id: str):
 async def chat(request: ChatRequest, http_request: Request):
     """对话接口（非流式响应，根据history字段判断单轮/多轮）"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Chat started - TraceID: {trace_id}")
+    logger.info(f"Chat request started | TraceID: {trace_id}")
     conversation_type = "multi-turn" if len(request.history) > 0 else "single-turn"
     
     try:
@@ -57,28 +57,28 @@ async def chat(request: ChatRequest, http_request: Request):
         
         response = await handlers.chat(request, trace_id)
         
-        logger.info(f"Chat completed - TraceID: {trace_id}")
+        logger.info(f"Chat request completed | TraceID: {trace_id}")
         return BaseResponse.success(
             data=response.dict(),
             trace_id=trace_id
         )
         
     except ValidationException as e:
-        logger.warning(f"Validation error - TraceID: {trace_id} | Error: {str(e)}")
+        logger.warning(f"Validation error error={str(e)} | TraceID: {trace_id}")
         return BaseResponse.error(
             code=COMMON_ERROR_REQUEST_PARSE_ERROR,
             msg=str(e),
             trace_id=trace_id
         )
     except BaseBusinessException as e:
-        logger.error(f"Business error - TraceID: {trace_id} | Error: {str(e)}")
+        logger.error(f"Business error error={str(e)} | TraceID: {trace_id}")
         return BaseResponse.error(
             code=e.code,
             msg=e.message,
             trace_id=trace_id
         )
     except Exception as e:
-        logger.error(f"Unexpected error - TraceID: {trace_id} | Error: {str(e)}")
+        logger.error(f"Unexpected error error={str(e)} | TraceID: {trace_id}")
         return BaseResponse.error(
             code=COMMON_ERROR_REQUEST_PARSE_ERROR,
             msg=f"服务内部错误: {str(e)}",
@@ -90,7 +90,7 @@ async def chat(request: ChatRequest, http_request: Request):
 async def chat_stream(request: ChatRequest, http_request: Request):
     """对话接口（流式响应，根据history字段判断单轮/多轮）"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Chat stream started - TraceID: {trace_id}")
+    logger.info(f"Chat stream request started | TraceID: {trace_id}")
     conversation_type = "multi-turn" if len(request.history) > 0 else "single-turn"
     
     try:
@@ -111,7 +111,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
         # 获取流式生成器
         stream_generator = handlers.chat_stream(request, trace_id)
         
-        logger.info(f"Chat stream completed - TraceID: {trace_id}")
+        logger.info(f"Chat stream request completed | TraceID: {trace_id}")
         # 返回流式响应 - 原始chunk块
         return StreamingResponse(
             _stream_wrapper(stream_generator, trace_id),
@@ -124,7 +124,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
         )
         
     except ValidationException as e:
-        logger.warning(f"Validation error - TraceID: {trace_id} | Error: {str(e)}")
+        logger.warning(f"Validation error error={str(e)} | TraceID: {trace_id}")
         raise HTTPException(
             status_code=400,
             detail=BaseResponse.error(
@@ -134,7 +134,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
             ).dict()
         )
     except BaseBusinessException as e:
-        logger.error(f"Business error - TraceID: {trace_id} | Error: {str(e)}")
+        logger.error(f"Business error error={str(e)} | TraceID: {trace_id}")
         raise HTTPException(
             status_code=500,
             detail=BaseResponse.error(
@@ -144,7 +144,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
             ).dict()
         )
     except Exception as e:
-        logger.error(f"Unexpected error - TraceID: {trace_id} | Error: {str(e)}")
+        logger.error(f"Unexpected error error={str(e)} | TraceID: {trace_id}")
         raise HTTPException(
             status_code=500,
             detail=BaseResponse.error(
@@ -159,7 +159,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
 async def get_enabled_models(http_request: Request):
     """获取启用的模型列表"""
     trace_id = str(uuid.uuid4())
-    logger.info(f"Get enabled models started - TraceID: {trace_id}")
+    logger.info(f"Get enabled models request started | TraceID: {trace_id}")
     
     try:
         # 从service_registry获取chat服务的handlers实例
@@ -175,21 +175,21 @@ async def get_enabled_models(http_request: Request):
         
         enabled_models = handlers.get_enabled_models()
         
-        logger.info(f"Get enabled models completed - TraceID: {trace_id}")
+        logger.info(f"Get enabled models request completed | TraceID: {trace_id}")
         return BaseResponse.success(
             data={"models": enabled_models},
             trace_id=trace_id
         )
         
     except BaseBusinessException as e:
-        logger.error(f"Business error - TraceID: {trace_id} | Error: {str(e)}")
+        logger.error(f"Business error error={str(e)} | TraceID: {trace_id}")
         return BaseResponse.error(
             code=e.code,
             msg=e.message,
             trace_id=trace_id
         )
     except Exception as e:
-        logger.error(f"Unexpected error - TraceID: {trace_id} | Error: {str(e)}")
+        logger.error(f"Unexpected error error={str(e)} | TraceID: {trace_id}")
         return BaseResponse.error(
             code=COMMON_ERROR_REQUEST_PARSE_ERROR,
             msg=f"服务内部错误: {str(e)}",
