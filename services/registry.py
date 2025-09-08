@@ -5,12 +5,10 @@ Date: 2025-01-21
 '''
 import importlib
 from typing import Dict, List, Optional
-from pathlib import Path
 from loguru import logger
-import yaml
-import os
 
 from .base import BaseService
+from core.config import get_services_config, ServicesConfig
 
 
 class ServiceRegistry:
@@ -18,21 +16,11 @@ class ServiceRegistry:
     
     def __init__(self):
         self.services: Dict[str, BaseService] = {}
-        self.services_config = self._load_services_config()
-    
-    def _load_services_config(self) -> Dict[str, any]:
-        """加载服务配置"""
-        config_path = Path(__file__).parent.parent / "configs" / "services" / "services.yml"
-        
-        if not config_path.exists():
-            raise FileNotFoundError(f"服务配置文件不存在: {config_path}")
-        
-        with open(config_path, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f)
+        self.services_config = get_services_config()
     
     async def discover_and_register_services(self):
         """发现并注册所有启用的服务"""
-        enabled_services = self.services_config.get('services', {}).get('enabled', [])
+        enabled_services = self.services_config.enabled
         
         for service_name in enabled_services:
             try:
@@ -53,7 +41,12 @@ class ServiceRegistry:
         service_class = getattr(module, class_name)
         
         # 获取服务配置
-        service_config = self.services_config.get('services', {}).get(service_name, {})
+        service_config_attr = getattr(self.services_config, service_name, None)
+        if service_config_attr:
+            # 将Pydantic模型转换为字典，以保持与原有接口兼容
+            service_config = service_config_attr.model_dump()
+        else:
+            service_config = {}
         
         # 实例化服务
         service_instance = service_class(service_config)

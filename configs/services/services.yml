@@ -4,7 +4,7 @@ services:
   enabled:
     - chat
     - document
-    # - retrieval
+    - retrieval
     # - multimodal  # 暂未启用
 
   # Chat服务配置 - 提供对话相关接口
@@ -44,12 +44,26 @@ services:
     enabled: true
     version: "1.0.0"
     endpoints:
-      build_knowledge_base: true
-      vector_search: true
-      hybrid_search: true
-      qa_retrieval: true
-    vector_dimensions: 1536
-    max_results: 100
+      upload_files: true
+      clean_document: true
+      # 其他端点待后续添加
+      # vector_search: true
+      # hybrid_search: true
+      # qa_retrieval: true
+    # MongoDB配置
+    retrieval_db_name: "ai_backend_services_retrieval"
+    retrieval_document_collection_name: "retrieval_documents"
+    retrieval_kb_collection_name: "retrieval_knowledge_bases"
+    # 文件配置
+    max_file_size: 52428800  # 50MB
+    max_files_per_request: 10  # 单次请求最大文件数量
+    supported_formats:
+      - docx
+    # 文档清洗性能配置
+    clean_performance:
+      sync_threshold: 20          # 同步处理阈值：≤20个文档同步处理，>20个异步处理
+      chunk_batch_size: 10        # 异步处理时的分批大小
+      single_doc_timeout_seconds: 30  # 单个文档清洗超时时间(秒)
 
   # 多模态服务配置（暂未启用）
   multimodal:

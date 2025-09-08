@@ -9,7 +9,7 @@ import yaml
 import os
 from pathlib import Path
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 from loguru import logger
 
@@ -60,6 +60,101 @@ class AppConfig(BaseModel):
     
     class Config:
         frozen = True
+
+
+# ===============服务配置===============
+class BaseServiceConfig(BaseModel):
+    """基础服务配置"""
+    enabled: bool = Field(True, description="服务是否启用")
+    version: str = Field("1.0.0", description="服务版本")
+    endpoints: Dict[str, bool] = Field(default_factory=dict, description="启用的端点")
+    
+    class Config:
+        frozen = True
+
+
+class ChatConfig(BaseServiceConfig):
+    """Chat服务配置"""
+    enabled_models: List[str] = Field(default_factory=list, description="启用的模型列表")
+    rate_limits: Dict[str, int] = Field(default_factory=dict, description="限流配置")
+
+
+class DocumentConfig(BaseServiceConfig):
+    """Document服务配置"""
+    supported_formats: List[str] = Field(default_factory=list, description="支持的文件格式")
+    max_file_size: int = Field(52428800, description="最大文件大小(字节)", ge=1)
+
+
+class DocumentCleanPerformanceConfig(BaseModel):
+    """文档清洗性能配置"""
+    sync_threshold: int = Field(20, description="同步处理阈值", ge=1, le=100)
+    chunk_batch_size: int = Field(10, description="异步处理时的分批大小", ge=5, le=50)
+    single_doc_timeout_seconds: int = Field(30, description="单个文档清洗超时时间(秒)", ge=10, le=300)
+
+class RetrievalConfig(BaseServiceConfig):
+    """Retrieval服务配置"""
+    retrieval_db_name: str = Field("ai_backend_services_retrieval", description="数据库名")
+    retrieval_document_collection_name: str = Field("retrieval_documents", description="文档集合名")
+    retrieval_kb_collection_name: str = Field("retrieval_knowledge_bases", description="知识库集合名")
+    max_file_size: int = Field(52428800, description="最大文件大小(字节)", ge=1)
+    max_files_per_request: int = Field(10, description="单次请求最大文件数量", ge=1)
+    supported_formats: List[str] = Field(default_factory=list, description="支持的文件格式")
+    clean_performance: Optional[DocumentCleanPerformanceConfig] = Field(None, description="文档清洗性能配置")
+
+
+class MultimodalConfig(BaseServiceConfig):
+    """Multimodal服务配置"""
+    pass
+
+
+class ServicesConfig(BaseModel):
+    """服务配置模型"""
+    enabled: List[str] = Field(..., description="启用的服务列表")
+    chat: Optional[ChatConfig] = Field(None, description="Chat服务配置")
+    document: Optional[DocumentConfig] = Field(None, description="Document服务配置")
+    retrieval: Optional[RetrievalConfig] = Field(None, description="Retrieval服务配置")
+    multimodal: Optional[MultimodalConfig] = Field(None, description="Multimodal服务配置")
+    
+    class Config:
+        frozen = True
+
+
+@lru_cache(maxsize=1)
+def load_services_config() -> ServicesConfig:
+    """加载服务配置（带缓存）"""
+    cfg_path = Path(__file__).parent.parent.parent / "configs" / "services" / "services.yml"
+    
+    if not cfg_path.exists():
+        raise ConfigValidationError(f"服务配置文件不存在: {cfg_path}")
+    
+    try:
+        with open(cfg_path, encoding='utf-8') as f:
+            raw_config = yaml.safe_load(f)
+        
+        # 提取services配置
+        services_data = raw_config.get('services', {})
+        
+        # 支持环境变量覆盖关键配置
+        if 'retrieval' in services_data:
+            retrieval_config = services_data['retrieval']
+            # 支持环境变量覆盖数据库配置
+            retrieval_config['retrieval_db_name'] = os.getenv('RETRIEVAL_DB_NAME', 
+                                                            retrieval_config.get('retrieval_db_name', 'ai_backend_services_retrieval'))
+            retrieval_config['max_file_size'] = int(os.getenv('MAX_FILE_SIZE', 
+                                                            retrieval_config.get('max_file_size', 52428800)))
+            retrieval_config['max_files_per_request'] = int(os.getenv('MAX_FILES_PER_REQUEST', 
+                                                                    retrieval_config.get('max_files_per_request', 10)))
+        
+        return ServicesConfig(**services_data)
+        
+    except Exception as e:
+        raise ConfigValidationError(f"服务配置加载失败: {str(e)}")
+
+
+@lru_cache(maxsize=1)
+def get_services_config() -> ServicesConfig:
+    """获取服务配置（带缓存）"""
+    return load_services_config()
 
 
 @lru_cache(maxsize=10)
