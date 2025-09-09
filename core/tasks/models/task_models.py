@@ -61,6 +61,9 @@ class BaseTask(BaseModel):
     worker_id: Optional[str] = Field(None, description="执行worker标识")
     trace_id: Optional[str] = Field(None, description="链路追踪ID")
     
+    # 任务元数据 - 用于存储业务相关信息
+    metadata: Optional[Dict[str, Any]] = Field(None, description="任务元数据")
+    
     class Config:
         use_enum_values = True
 

@@ -11,7 +11,7 @@ from loguru import logger
 
 from core.schemas.base_resp_model_define import BaseResponse
 from core.exceptions import ValidationException, BaseBusinessException
-from .schemas import RetrievalUploadRequest, RetrievalUploadResponse
+from .schemas import RetrievalUploadRequest, RetrievalUploadResponse, DocumentCleanRequest, DocumentCleanTaskResponse, CleanTaskStatusResponse
 
 # 创建retrieval服务路由
 retrieval_router = APIRouter()
@@ -90,6 +90,127 @@ async def upload_documents(
         
     except ValidationException as e:
         logger.error(f"Validation error - TraceID: {trace_id}: {str(e)}")
+        return BaseResponse.error(code=400, msg=str(e), trace_id=trace_id)
+    except BaseBusinessException as e:
+        logger.error(f"Business error - TraceID: {trace_id}: {str(e)}")
+        return BaseResponse.error(code=e.code, msg=e.message, trace_id=trace_id)
+    except Exception as e:
+        logger.error(f"Unexpected error - TraceID: {trace_id}: {str(e)}")
+        return BaseResponse.error(code=500, msg="服务内部错误", trace_id=trace_id)
+
+
+@retrieval_router.get("/clean-document/{clean_task_id}", response_model=BaseResponse)
+async def get_clean_task_status(
+    request: Request,
+    clean_task_id: str
+):
+    """
+    查询文档清洗任务状态
+    
+    - **clean_task_id**: 清洗任务ID
+    """
+    trace_id = getattr(request.state, 'trace_id', str(uuid.uuid4()))
+    logger.info(f"Received clean task status query - TraceID: {trace_id}, TaskID: {clean_task_id}")
+    
+    try:
+        # 验证参数
+        if not clean_task_id or not clean_task_id.strip():
+            return BaseResponse.error(
+                code=400,
+                msg="清洗任务ID不能为空",
+                trace_id=trace_id
+            )
+        
+        # 获取服务实例
+        service_registry = getattr(request.app.state, 'service_registry', None)
+        service = service_registry.get_service('retrieval') if service_registry else None
+        handlers = service.handlers if service else None
+        
+        if not handlers:
+            return BaseResponse.error(
+                code=500,
+                msg="Retrieval服务未初始化",
+                trace_id=trace_id
+            )
+        
+        # 调用业务逻辑处理（包含任务ID格式校验）
+        result = await handlers.get_clean_task_status(
+            task_id=clean_task_id.strip(),
+            trace_id=trace_id
+        )
+        
+        if result is None:
+            return BaseResponse.error(
+                code=404,
+                msg="清洗任务不存在或任务ID格式错误",
+                trace_id=trace_id
+            )
+        
+        return BaseResponse.success(
+            data=result,
+            trace_id=trace_id
+        )
+        
+    except ValidationException as e:
+        logger.error(f"Validation error - TraceID: {trace_id}: {str(e)}")
+        return BaseResponse.error(code=400, msg=str(e), trace_id=trace_id)
+    except BaseBusinessException as e:
+        logger.error(f"Business error - TraceID: {trace_id}: {str(e)}")
+        return BaseResponse.error(code=e.code, msg=e.message, trace_id=trace_id)
+    except Exception as e:
+        logger.error(f"Unexpected error - TraceID: {trace_id}: {str(e)}")
+        return BaseResponse.error(code=500, msg="服务内部错误", trace_id=trace_id)
+
+
+@retrieval_router.post("/clean-document", response_model=BaseResponse)
+async def clean_documents(
+    request: Request,
+    clean_request: DocumentCleanRequest
+):
+    """
+    清洗知识库中的文档,将文档分割成可检索的块,通过haystack管理
+    """
+    trace_id = getattr(request.state, 'trace_id', str(uuid.uuid4()))
+    logger.info(f"Received clean documents request - TraceID: {trace_id}")
+    
+    try:
+        # 验证参数
+        if not clean_request.knowledge_base_name or not clean_request.knowledge_base_name.strip():
+            return BaseResponse.error(
+                code=400,
+                msg="知识库名称不能为空",
+                trace_id=trace_id
+            )
+        
+        # 获取服务实例
+        service_registry = getattr(request.app.state, 'service_registry', None)
+        service = service_registry.get_service('retrieval') if service_registry else None
+        handlers = service.handlers if service else None
+        
+        if not handlers:
+            return BaseResponse.error(
+                code=500,
+                msg="Retrieval服务未初始化",
+                trace_id=trace_id
+            )
+        
+        # 调用异步业务逻辑处理
+        result = await handlers.clean_documents(
+            knowledge_base_name=clean_request.knowledge_base_name.strip(),
+            clean_settings=clean_request.clean_settings,
+            trace_id=trace_id
+        )
+        
+        return BaseResponse.success(
+            data=result.dict(),
+            trace_id=trace_id
+        )
+        
+    except ValidationException as e:
+        logger.error(f"Validation error - TraceID: {trace_id}: {str(e)}")
+        return BaseResponse.error(code=400, msg=str(e), trace_id=trace_id)
+    except ValueError as e:
+        logger.error(f"Value error - TraceID: {trace_id}: {str(e)}")
         return BaseResponse.error(code=400, msg=str(e), trace_id=trace_id)
     except BaseBusinessException as e:
         logger.error(f"Business error - TraceID: {trace_id}: {str(e)}")

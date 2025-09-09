@@ -1,0 +1,46 @@
+{
+  "append_after_sentence": null,
+  "batch_size": 32,
+  "char_min_freq": null,
+  "classpath": "hanlp.components.eos.ngram.NgramSentenceBoundaryDetector",
+  "dropout": 0.2,
+  "embedding_size": 128,
+  "eos_char_is_punct": true,
+  "eos_char_min_freq": 200,
+  "eos_chars": null,
+  "epochs": 5,
+  "grad_norm": null,
+  "hanlp_version": "2.0.1-alpha.0",
+  "loss_reduction": "sum",
+  "lr": 0.001,
+  "rnn_bidirectional": false,
+  "rnn_layers": 1,
+  "rnn_size": 256,
+  "rnn_type": "LSTM",
+  "seed": 1595910116,
+  "window_size": 5
+}
+char[8852] = ['<pad>', '<unk>', 'v', 'e', 'g', 'n', ',', ' ', 'o', 'm', 'P', 's', '"', 'w', 'r', 'l', 'i', 'E', 'å', 'p', 'M', 'h', 'u', 't', '.', 'D', 'd', 'f', 'a', 'G', 'T', 'k', '-', 'c', 'L', ';', '?', 'K', 'b', ')', 'ø', 'y', 'O', 'A', 'æ', 'N', 'j', 'U', ':', 'H']
+NgramSentenceBoundaryDetectionModel(
+  (embed): Embedding(8852, 128)
+  (rnn): LSTM(128, 256, batch_first=True)
+  (dropout): Dropout(p=0.2, inplace=False)
+  (dense): Linear(in_features=256, out_features=1, bias=True)
+)
+Using GPUs: [7]
+3677043/484837 samples in trn/dev set.
+Epoch 1 / 5:
+114908/114908 loss: 0.1064 Precision: 97.33% Recall: 88.13% F1: 92.51% ET: 12 m 31 s
+  15152/15152 loss: 0.1143 Precision: 97.97% Recall: 84.90% F1: 90.97% ET: 27 s
+Epoch 2 / 5:
+114908/114908 loss: 0.1015 Precision: 97.68% Recall: 88.55% F1: 92.89% ET: 12 m 21 s
+  15152/15152 loss: 0.1140 Precision: 98.03% Recall: 84.84% F1: 90.96% ET: 27 s
+Epoch 3 / 5:
+114908/114908 loss: 0.1013 Precision: 97.68% Recall: 88.56% F1: 92.90% ET: 12 m 25 s
+  15152/15152 loss: 0.1142 Precision: 98.12% Recall: 84.75% F1: 90.94% ET: 23 s
+Epoch 4 / 5:
+114908/114908 loss: 0.1016 Precision: 97.66% Recall: 88.50% F1: 92.85% ET: 12 m 30 s
+  15152/15152 loss: 0.1142 Precision: 97.81% Recall: 85.03% F1: 90.97% ET: 23 s
+Epoch 5 / 5:
+114908/114908 loss: 0.1021 Precision: 97.62% Recall: 88.47% F1: 92.82% ET: 12 m 24 s
+  15152/15152 loss: 0.1147 Precision: 97.79% Recall: 84.95% F1: 90.92% ET: 24 s

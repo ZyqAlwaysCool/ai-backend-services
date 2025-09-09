@@ -27,3 +27,10 @@ auth:
 server:
   host: "0.0.0.0"
   port: 19999
+
+# Qdrant向量数据库配置
+qdrant:
+  host: "localhost"
+  port: 6333
+  timeout: 30
+  embedding_dim: 768  # 根据实际embedding模型调整

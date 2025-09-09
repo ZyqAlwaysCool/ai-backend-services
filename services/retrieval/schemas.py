@@ -80,10 +80,31 @@ class FailedFileDetail(BaseModel):
     error_message: str = Field(..., description="错误信息")
     error_code: Optional[str] = Field(None, description="错误代码")
 
-class DocumentCleanResponse(BaseModel):
+class RetrievalTaskTypePrefix(str, Enum):
+    """Retrieval服务任务类型前缀"""
+    CLEAN_TASK = "clean-task"
+
+
+class DocumentCleanTaskResponse(BaseModel):
+    """清洗任务提交响应"""
+    clean_task_id: str = Field(..., description="清洗任务ID")
     knowledge_base_name: str = Field(..., description="知识库名称")
+    total_pending_files: int = Field(..., description="待处理文件数量")
+    created_at: str = Field(..., description="任务创建时间")
+
+
+class CleanTaskStatusResponse(BaseModel):
+    """清洗任务状态查询响应"""
+    clean_task_id: str = Field(..., description="清洗任务ID")
+    status: str = Field(..., description="任务状态: pending|processing|completed|failed|cancelled")
+    knowledge_base_name: str = Field(..., description="知识库名称") 
     total_files: int = Field(..., description="总文件数")
-    success_count: int = Field(..., description="成功处理文件数")
-    failed_count: int = Field(..., description="失败处理文件数")
+    processed_files: int = Field(..., description="已处理文件数")
+    successful_files: int = Field(..., description="成功处理文件数")
+    failed_files: int = Field(..., description="失败处理文件数")
     total_chunks: int = Field(..., description="生成的文档块总数")
-    failed_files: List[FailedFileDetail] = Field(default=[], description="失败文件详情")
+    created_at: str = Field(..., description="创建时间")
+    started_at: Optional[str] = Field(None, description="开始处理时间") 
+    completed_at: Optional[str] = Field(None, description="完成时间")
+    error_message: Optional[str] = Field(None, description="错误信息")
+    failed_files_detail: List[FailedFileDetail] = Field(default=[], description="失败文件详情")

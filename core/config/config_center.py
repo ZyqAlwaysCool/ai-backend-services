@@ -57,6 +57,10 @@ class AppConfig(BaseModel):
     token_expire_hours: int = Field(24, description="Token过期时间(小时)", ge=1, le=168)
     server_host: str = Field("0.0.0.0", description="服务器主机")
     server_port: int = Field(18888, description="服务器端口", ge=1, le=65535)
+    qdrant_host: str = Field("localhost", description="Qdrant主机")
+    qdrant_port: int = Field(6333, description="Qdrant端口", ge=1, le=65535)
+    qdrant_timeout: int = Field(30, description="Qdrant超时时间(秒)", ge=1, le=300)
+    embedding_dim: int = Field(768, description="向量维度", ge=128, le=4096)
     
     class Config:
         frozen = True
@@ -243,6 +247,15 @@ def load_app_config() -> AppConfig:
                 'server_port': server_config.get('port', 18888)
             })
         
+        if 'qdrant' in raw_config:
+            qdrant_config = raw_config['qdrant']
+            config_dict.update({
+                'qdrant_host': qdrant_config.get('host', 'localhost'),
+                'qdrant_port': qdrant_config.get('port', 6333),
+                'qdrant_timeout': qdrant_config.get('timeout', 30),
+                'embedding_dim': qdrant_config.get('embedding_dim', 768)
+            })
+        
         # 支持环境变量覆盖
         config_dict['mongo_host'] = os.getenv('MONGO_HOST', config_dict.get('mongo_host', '127.0.0.1'))
         config_dict['mongo_port'] = int(os.getenv('MONGO_PORT', config_dict.get('mongo_port', 27017)))
@@ -257,6 +270,10 @@ def load_app_config() -> AppConfig:
         config_dict['token_expire_hours'] = int(os.getenv('TOKEN_EXPIRE_HOURS', config_dict.get('token_expire_hours', 24)))
         config_dict['server_host'] = os.getenv('HOST', config_dict.get('server_host', '0.0.0.0'))
         config_dict['server_port'] = int(os.getenv('PORT', config_dict.get('server_port', 18888)))
+        config_dict['qdrant_host'] = os.getenv('QDRANT_HOST', config_dict.get('qdrant_host', 'localhost'))
+        config_dict['qdrant_port'] = int(os.getenv('QDRANT_PORT', config_dict.get('qdrant_port', 6333)))
+        config_dict['qdrant_timeout'] = int(os.getenv('QDRANT_TIMEOUT', config_dict.get('qdrant_timeout', 30)))
+        config_dict['embedding_dim'] = int(os.getenv('EMBEDDING_DIM', config_dict.get('embedding_dim', 768)))
         
         return AppConfig(**config_dict)
     except Exception as e:

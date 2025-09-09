@@ -1,0 +1,180 @@
+{
+  "adam_epsilon": 1e-08,
+  "average_subwords": false,
+  "batch_max_tokens": null,
+  "batch_size": 32,
+  "char_level": true,
+  "classpath": "hanlp.components.tokenizers.transformer.TransformerTaggingTokenizer",
+  "crf": false,
+  "delimiter": null,
+  "epochs": 30,
+  "extra_embeddings": null,
+  "finetune": false,
+  "grad_norm": 1,
+  "gradient_accumulation": 1,
+  "hanlp_version": "2.1.0-beta.31",
+  "hard_constraint": true,
+  "hidden_dropout": null,
+  "layer_dropout": 0,
+  "lr": 0.001,
+  "max_seq_len": 510,
+  "mix_embedding": 0,
+  "patience": 30,
+  "reduction": "mean",
+  "ret_raw_hidden_states": false,
+  "sampler_builder": {
+    "classpath": "hanlp.common.dataset.SortingSamplerBuilder",
+    "use_effective_tokens": false,
+    "batch_max_tokens": null,
+    "batch_size": 32
+  },
+  "scalar_mix": null,
+  "secondary_encoder": null,
+  "seed": 1655251243,
+  "sent_delimiter": null,
+  "tagging_scheme": "BMES",
+  "token_key": null,
+  "transform": {
+    "classpath": "hanlp.common.transform.NormalizeCharacter",
+    "dst": "token",
+    "src": "token",
+    "mapper": "https://file.hankcs.com/hanlp/utils/char_table_20210602_202632.json.zip"
+  },
+  "transformer": "hfl/chinese-electra-180g-small-discriminator",
+  "transformer_grad_norm": null,
+  "transformer_layers": null,
+  "transformer_lr": 0.0001,
+  "warmup_steps": 0.1,
+  "weight_decay": 0,
+  "word_dropout": 0.1
+}
+Guess token_key=token according to the training dataset: 1862433 samples: {'token': ['本', '一亿', '字', '大型', '综合', '语料库', '覆盖', '新闻', '、', '社交', '媒体', '、', '金融', '、', '法律', '等', '多', '个', '领域', '，', '是', '已知', '范围', '内', '全', '世界', '最', '大', '的', '中文', '分词', '语料库', '。']} ...
+tag[4] = ['S', 'B', 'E', 'M']
+Pruned 0 (0.0%) samples out of 1862433.
+Pruned 0 (0.0%) samples out of 124995.
+Model built with 12281604/12281604 trainable/total parameters.
+Using GPUs: [0]
+1862433/124995 samples in trn/dev set.
+Epoch 1 / 30:
+58202/58202 loss: 0.1951  ET: 46 m 33 s
+  3907/3907 loss: 0.2395 P: 93.74% R: 95.13% F1: 94.43% ET: 40 s
+47 m 12 s / 23 h 36 m 11 s ETA: 22 h 48 m 59 s (saved)
+Epoch 2 / 30:
+58202/58202 loss: 0.1394  ET: 46 m 15 s
+  3907/3907 loss: 0.2678 P: 91.21% R: 92.55% F1: 91.88% ET: 39 s
+1 h 34 m 7 s / 23 h 31 m 45 s ETA: 21 h 57 m 38 s (1)
+Epoch 3 / 30:
+58202/58202 loss: 0.1383  ET: 46 m 18 s
+  3907/3907 loss: 0.5609 P: 82.59% R: 86.26% F1: 84.38% ET: 41 s
+2 h 21 m 6 s / 23 h 31 m 2 s ETA: 21 h 9 m 56 s (2)
+Epoch 4 / 30:
+58202/58202 loss: 0.1370  ET: 49 m 49 s
+  3907/3907 loss: 0.3791 P: 83.48% R: 84.88% F1: 84.17% ET: 52 s
+3 h 11 m 47 s / 23 h 58 m 22 s ETA: 20 h 46 m 35 s (3)
+Epoch 5 / 30:
+58202/58202 loss: 0.1320  ET: 54 m 13 s
+  3907/3907 loss: 0.3067 P: 86.16% R: 88.46% F1: 87.30% ET: 51 s
+4 h 6 m 51 s / 1 d 0 h 41 m 6 s ETA: 20 h 34 m 15 s (4)
+Epoch 6 / 30:
+58202/58202 loss: 0.1279  ET: 53 m 15 s
+  3907/3907 loss: 0.2010 P: 90.56% R: 91.50% F1: 91.03% ET: 52 s
+5 h 0 m 58 s / 1 d 1 h 4 m 50 s ETA: 20 h 3 m 52 s (5)
+Epoch 7 / 30:
+58202/58202 loss: 0.1240  ET: 54 m 49 s
+  3907/3907 loss: 0.1972 P: 91.38% R: 91.70% F1: 91.54% ET: 53 s
+5 h 56 m 39 s / 1 d 1 h 28 m 32 s ETA: 19 h 31 m 53 s (6)
+Epoch 8 / 30:
+58202/58202 loss: 0.1211  ET: 53 m 43 s
+  3907/3907 loss: 0.1754 P: 92.70% R: 93.33% F1: 93.02% ET: 55 s
+6 h 51 m 18 s / 1 d 1 h 42 m 21 s ETA: 18 h 51 m 3 s (7)
+Epoch 9 / 30:
+58202/58202 loss: 0.1183  ET: 53 m 20 s
+  3907/3907 loss: 0.1526 P: 93.72% R: 94.25% F1: 93.98% ET: 52 s
+7 h 45 m 30 s / 1 d 1 h 51 m 39 s ETA: 18 h 6 m 9 s (8)
+Epoch 10 / 30:
+58202/58202 loss: 0.1159  ET: 54 m 52 s
+  3907/3907 loss: 0.1325 P: 94.55% R: 94.30% F1: 94.42% ET: 52 s
+8 h 41 m 14 s / 1 d 2 h 3 m 42 s ETA: 17 h 22 m 28 s (9)
+Epoch 11 / 30:
+58202/58202 loss: 0.1134  ET: 53 m 15 s
+  3907/3907 loss: 0.1173 P: 95.15% R: 95.25% F1: 95.20% ET: 52 s
+9 h 35 m 21 s / 1 d 2 h 9 m 9 s ETA: 16 h 33 m 48 s (saved)
+Epoch 12 / 30:
+58202/58202 loss: 0.1113  ET: 55 m 13 s
+  3907/3907 loss: 0.0951 P: 95.91% R: 95.60% F1: 95.76% ET: 53 s
+10 h 31 m 27 s / 1 d 2 h 18 m 38 s ETA: 15 h 47 m 11 s (saved)
+Epoch 13 / 30:
+58202/58202 loss: 0.1091  ET: 55 m 52 s
+  3907/3907 loss: 0.0979 P: 96.14% R: 95.82% F1: 95.98% ET: 55 s
+11 h 28 m 14 s / 1 d 2 h 28 m 15 s ETA: 15 h 0 m 0 s (saved)
+Epoch 14 / 30:
+58202/58202 loss: 0.1071  ET: 54 m 4 s
+  3907/3907 loss: 0.0859 P: 96.84% R: 96.37% F1: 96.61% ET: 51 s
+12 h 23 m 9 s / 1 d 2 h 32 m 29 s ETA: 14 h 9 m 19 s (saved)
+Epoch 15 / 30:
+58202/58202 loss: 0.1050  ET: 54 m 49 s
+  3907/3907 loss: 0.0868 P: 97.06% R: 96.51% F1: 96.78% ET: 56 s
+13 h 18 m 55 s / 1 d 2 h 37 m 49 s ETA: 13 h 18 m 55 s (saved)
+Epoch 16 / 30:
+58202/58202 loss: 0.1031  ET: 54 m 10 s
+  3907/3907 loss: 0.0813 P: 97.12% R: 96.51% F1: 96.82% ET: 51 s
+14 h 13 m 56 s / 1 d 2 h 41 m 8 s ETA: 12 h 27 m 12 s (saved)
+Epoch 17 / 30:
+58202/58202 loss: 0.1012  ET: 54 m 14 s
+  3907/3907 loss: 0.0739 P: 97.33% R: 97.00% F1: 97.16% ET: 53 s
+15 h 9 m 4 s / 1 d 2 h 44 m 14 s ETA: 11 h 35 m 10 s (saved)
+Epoch 18 / 30:
+58202/58202 loss: 0.0992  ET: 54 m 13 s
+  3907/3907 loss: 0.0684 P: 97.60% R: 97.09% F1: 97.35% ET: 55 s
+16 h 4 m 12 s / 1 d 2 h 47 m 0 s ETA: 10 h 42 m 48 s (saved)
+Epoch 19 / 30:
+58202/58202 loss: 0.0976  ET: 53 m 19 s
+  3907/3907 loss: 0.0724 P: 97.60% R: 97.07% F1: 97.33% ET: 53 s
+16 h 58 m 24 s / 1 d 2 h 48 m 0 s ETA: 9 h 49 m 36 s (1)
+Epoch 20 / 30:
+58202/58202 loss: 0.0958  ET: 54 m 14 s
+  3907/3907 loss: 0.0693 P: 97.76% R: 97.42% F1: 97.59% ET: 52 s
+17 h 53 m 30 s / 1 d 2 h 50 m 15 s ETA: 8 h 56 m 45 s (saved)
+Epoch 21 / 30:
+58202/58202 loss: 0.0941  ET: 53 m 26 s
+  3907/3907 loss: 0.0663 P: 97.72% R: 97.64% F1: 97.68% ET: 52 s
+18 h 47 m 49 s / 1 d 2 h 51 m 10 s ETA: 8 h 3 m 21 s (saved)
+Epoch 22 / 30:
+58202/58202 loss: 0.0924  ET: 53 m 3 s
+  3907/3907 loss: 0.0676 P: 97.88% R: 97.58% F1: 97.73% ET: 53 s
+19 h 41 m 45 s / 1 d 2 h 51 m 28 s ETA: 7 h 9 m 44 s (saved)
+Epoch 23 / 30:
+58202/58202 loss: 0.0907  ET: 52 m 13 s
+  3907/3907 loss: 0.0650 P: 97.98% R: 97.68% F1: 97.83% ET: 53 s
+20 h 34 m 51 s / 1 d 2 h 50 m 40 s ETA: 6 h 15 m 49 s (saved)
+Epoch 24 / 30:
+58202/58202 loss: 0.0891  ET: 52 m 18 s
+  3907/3907 loss: 0.0638 P: 98.06% R: 97.76% F1: 97.91% ET: 57 s
+21 h 28 m 6 s / 1 d 2 h 50 m 8 s ETA: 5 h 22 m 2 s (saved)
+Epoch 25 / 30:
+58202/58202 loss: 0.0874  ET: 54 m 5 s
+  3907/3907 loss: 0.0636 P: 98.06% R: 97.85% F1: 97.95% ET: 59 s
+22 h 23 m 10 s / 1 d 2 h 51 m 48 s ETA: 4 h 28 m 38 s (saved)
+Epoch 26 / 30:
+58202/58202 loss: 0.0861  ET: 53 m 23 s
+  3907/3907 loss: 0.0618 P: 98.12% R: 97.92% F1: 98.02% ET: 1 m 0 s
+23 h 17 m 33 s / 1 d 2 h 52 m 33 s ETA: 3 h 35 m 0 s (saved)
+Epoch 27 / 30:
+58202/58202 loss: 0.0848  ET: 53 m 41 s
+  3907/3907 loss: 0.0611 P: 98.13% R: 98.01% F1: 98.07% ET: 1 m 1 s
+1 d 0 h 12 m 16 s / 1 d 2 h 53 m 37 s ETA: 2 h 41 m 22 s (saved)
+Epoch 28 / 30:
+58202/58202 loss: 0.0836  ET: 53 m 49 s
+  3907/3907 loss: 0.0603 P: 98.14% R: 98.07% F1: 98.11% ET: 1 m 0 s
+1 d 1 h 7 m 5 s / 1 d 2 h 54 m 44 s ETA: 1 h 47 m 39 s (saved)
+Epoch 29 / 30:
+58202/58202 loss: 0.0825  ET: 51 m 44 s
+  3907/3907 loss: 0.0599 P: 98.16% R: 98.05% F1: 98.11% ET: 1 m 3 s
+1 d 1 h 59 m 51 s / 1 d 2 h 53 m 38 s ETA: 53 m 47 s (1)
+Epoch 30 / 30:
+58202/58202 loss: 0.0817  ET: 51 m 59 s
+  3907/3907 loss: 0.0566 P: 98.11% R: 98.10% F1: 98.10% ET: 1 m 8 s
+1 d 2 h 52 m 58 s / 1 d 2 h 52 m 58 s ETA: 0 s (2)
+Max score of dev is P: 98.14% R: 98.07% F1: 98.11% at epoch 28
+Average time of each epoch is 53 m 46 s
+1 d 2 h 52 m 58 s elapsed

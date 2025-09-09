@@ -57,6 +57,18 @@ class MongoStorage:
         with open(save_path, 'wb') as f:
             f.write(out.read())
     
+    def get_file_content_from_gridfs(self, file_id: str) -> bytes:
+        """根据文件ID从GridFS获取文件内容"""
+        try:
+            out = self.fs.get(file_id)
+            return out.read()
+        except NoFile:
+            logger.error(f"File not found in GridFS: {file_id}")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get file from GridFS: {file_id}, error: {str(e)}")
+            return None
+    
     def delete_from_gridfs(self, filename: str) -> bool:
         """按文件名删除文件(同名只删第一条)"""
         file_doc = self.fs.find_one({"filename": filename})

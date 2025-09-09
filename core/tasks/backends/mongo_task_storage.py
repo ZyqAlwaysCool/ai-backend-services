@@ -34,14 +34,21 @@ class MongoTaskStorage(StorageBackend):
         # 数据库名称
         self.db_name = self.config.get('db_name', 'ai_backend_services')
         
-        # 从注册表获取collection映射 - 业务无关，完全动态
-        self.collection_mapping = collection_registry.get_mappings()
-        
         # 存储实例缓存 {collection_name: MongoStorage}
         self.storage_instances = {}
         
         logger.info(f"MongoDB task storage initialized for database: {self.db_name}")
-        logger.info(f"Collection mapping: {self.collection_mapping}")
+        # 在需要时动态获取映射，避免固化问题
+        self._log_current_mappings()
+    
+    def _log_current_mappings(self):
+        """记录当前映射状态用于调试"""
+        current_mappings = collection_registry.get_mappings()
+        logger.info(f"Collection mapping: {current_mappings}")
+    
+    def _get_current_collection_mapping(self) -> Dict[str, str]:
+        """动态获取最新的collection映射"""
+        return collection_registry.get_mappings()
     
     def get_storage_instance(self, task_type: str = None) -> MongoStorage:
         """
@@ -53,10 +60,13 @@ class MongoTaskStorage(StorageBackend):
         Returns:
             MongoDB存储实例
         """
+        # 动态获取最新的collection映射
+        current_mapping = self._get_current_collection_mapping()
+        
         # 确定collection名称
-        collection_name = self.collection_mapping.get(
+        collection_name = current_mapping.get(
             task_type, 
-            self.collection_mapping['default']
+            current_mapping['default']
         )
         
         # 返回缓存的存储实例或创建新实例
@@ -170,7 +180,8 @@ class MongoTaskStorage(StorageBackend):
             # 如果直接定位失败，fallback到遍历查找（容错机制）
             logger.warning(f"Task not found in predicted collection {task_type_key}, trying all collections")
             
-            for fallback_type_key, collection_name in self.collection_mapping.items():
+            current_mapping = self._get_current_collection_mapping()
+            for fallback_type_key, collection_name in current_mapping.items():
                 if fallback_type_key == task_type_key:
                     continue  # 跳过已经尝试的
                     
@@ -225,7 +236,8 @@ class MongoTaskStorage(StorageBackend):
                 # 如果直接定位失败，fallback到遍历查找（容错机制）
                 logger.warning(f"Failed to update in predicted collection {task_type_key}, trying all collections")
                 
-                for fallback_type_key in self.collection_mapping.keys():
+                current_mapping = self._get_current_collection_mapping()
+                for fallback_type_key in current_mapping.keys():
                     if fallback_type_key == task_type_key:
                         continue  # 跳过已经尝试的
                         
@@ -273,7 +285,8 @@ class MongoTaskStorage(StorageBackend):
                 # 容错机制：如果直接定位失败，尝试其他collection
                 logger.warning(f"Failed to update progress in predicted collection {task_type_key}, trying fallback")
                 
-                for fallback_type_key in self.collection_mapping.keys():
+                current_mapping = self._get_current_collection_mapping()
+                for fallback_type_key in current_mapping.keys():
                     if fallback_type_key == task_type_key:
                         continue
                         
@@ -362,7 +375,8 @@ class MongoTaskStorage(StorageBackend):
             
             # 尝试在所有collection中更新
             updated = False
-            for task_type_key in self.collection_mapping.keys():
+            current_mapping = self._get_current_collection_mapping()
+            for task_type_key in current_mapping.keys():
                 storage = self.get_storage_instance(task_type_key)
                 try:
                     storage.update_record({'task_id': task_id}, update_data)
@@ -388,7 +402,8 @@ class MongoTaskStorage(StorageBackend):
             all_tasks = []
             
             # 从所有collection中查询
-            for task_type_key in self.collection_mapping.keys():
+            current_mapping = self._get_current_collection_mapping()
+            for task_type_key in current_mapping.keys():
                 storage = self.get_storage_instance(task_type_key)
                 
                 # 构建查询条件
@@ -445,7 +460,8 @@ class MongoTaskStorage(StorageBackend):
         """删除任务记录"""
         try:
             deleted = False
-            for task_type_key in self.collection_mapping.keys():
+            current_mapping = self._get_current_collection_mapping()
+            for task_type_key in current_mapping.keys():
                 storage = self.get_storage_instance(task_type_key)
                 try:
                     storage.delete_record({'task_id': task_id})
@@ -471,7 +487,8 @@ class MongoTaskStorage(StorageBackend):
             cutoff_date = datetime.now() - timedelta(days=days)
             total_cleaned = 0
             
-            for task_type_key in self.collection_mapping.keys():
+            current_mapping = self._get_current_collection_mapping()
+            for task_type_key in current_mapping.keys():
                 storage = self.get_storage_instance(task_type_key)
                 
                 try:
@@ -530,7 +547,8 @@ class MongoTaskStorage(StorageBackend):
             if task_type:
                 collections_to_check = [task_type]
             else:
-                collections_to_check = list(self.collection_mapping.keys())
+                current_mapping = self._get_current_collection_mapping()
+                collections_to_check = list(current_mapping.keys())
             
             for task_type_key in collections_to_check:
                 storage = self.get_storage_instance(task_type_key)

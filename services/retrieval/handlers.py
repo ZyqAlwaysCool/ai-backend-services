@@ -13,16 +13,20 @@ from loguru import logger
 from bson import ObjectId
 from haystack import Document
 from haystack.components.converters.docx import DOCXToDocument
+from haystack_integrations.document_stores.qdrant import QdrantDocumentStore
 
 from core.storage.mongo_storage import MongoStorage
+from core.config.config_center import get_app_config
+from core.tasks import TaskManagerFactory
 
 from .components.document_processor import DocumentProcessor
 from .components.document_cleaner import DocumentCleaner
 from .managers.knowledge_manager import KnowledgeBaseManager
+from .task_managers.document_clean_task_manager import DocumentCleanTaskManager
 from .schemas import (
     RetrievalUploadResponse, FileUploadResult,
-    DocumentCleanRequest, DocumentCleanResponse, DocumentCleanSettings,
-    FailedFileDetail
+    DocumentCleanRequest, DocumentCleanTaskResponse, CleanTaskStatusResponse, DocumentCleanSettings,
+    FailedFileDetail, RetrievalTaskTypePrefix
 )
 
 
@@ -35,13 +39,48 @@ class RetrievalHandlers:
         self.document_processor = None
         self.document_cleaner = None
         self.knowledge_manager = None
+        self.document_stores = {}  # 缓存每个知识库的DocumentStore
+        self.clean_task_manager = None  # 文档清洗任务管理器
     
     async def initialize(self):
         """轻量级初始化Retrieval服务处理器"""
+        # 初始化基础组件
         self.document_processor = DocumentProcessor(self.config)
         self.document_cleaner = DocumentCleaner(self.config)
         self.knowledge_manager = KnowledgeBaseManager(self.config)
+        
+        # 创建任务管理后端
+        queue_backend, storage_backend = TaskManagerFactory.create_default_backends()
+        
+        # 初始化文档清洗任务管理器
+        self.clean_task_manager = DocumentCleanTaskManager(
+            queue_backend,
+            storage_backend,
+            self.config
+        )
+        
         logger.info("Retrieval handlers初始化完成")
+    
+    def _get_document_store(self, knowledge_base_name: str) -> QdrantDocumentStore:
+        """获取或创建知识库对应的QdrantDocumentStore"""
+        if knowledge_base_name not in self.document_stores:
+            # 获取应用配置
+            app_config = get_app_config()
+            
+            # 为每个知识库创建独立的collection
+            self.document_stores[knowledge_base_name] = QdrantDocumentStore(
+                host=app_config.qdrant_host,
+                port=app_config.qdrant_port,
+                index=f"kb_{knowledge_base_name}",  # 每个知识库使用独立的index
+                embedding_dim=app_config.embedding_dim,
+                recreate_index=False,
+                return_embedding=True,
+                wait_result_from_api=True,
+                timeout=app_config.qdrant_timeout
+            )
+            logger.info(f"Created Qdrant DocumentStore for knowledge base: {knowledge_base_name} (host: {app_config.qdrant_host}:{app_config.qdrant_port})")
+        
+        return self.document_stores[knowledge_base_name]
     
     async def upload_documents(self, 
                               files: List[UploadFile], 
@@ -101,7 +140,7 @@ class RetrievalHandlers:
                         file_size=0,
                         upload_time=datetime.now(),
                         status="failed",
-                        error_message="创建知识库失败"
+                        error_message="知识库创建失败"
                     ))
                     failed_count += 1
                 
@@ -150,7 +189,7 @@ class RetrievalHandlers:
                     temp_file_path = temp_file.name
                 
                 try:
-                    # 上传文档
+                    # 上传文档至gridfs并记录元信息
                     result = self.document_processor.upload_document(
                         file_path=temp_file_path,
                         original_filename=file.filename,
@@ -207,12 +246,32 @@ class RetrievalHandlers:
             upload_results=upload_results
         )
     
-    async def clean_documents(self,
-                             knowledge_base_name: str,
-                             clean_settings: DocumentCleanSettings,
-                             trace_id: str = None) -> DocumentCleanResponse:
+    def _validate_clean_task_id(self, task_id: str) -> bool:
+        """验证清洗任务ID格式
+        
+        Args:
+            task_id: 任务ID
+            
+        Returns:
+            是否为有效的清洗任务ID格式
         """
-        清洗知识库中的文档
+        if not task_id:
+            return False
+            
+        # 检查任务ID前缀
+        expected_prefix = RetrievalTaskTypePrefix.CLEAN_TASK.value
+        if not task_id.startswith(expected_prefix):
+            logger.warning(f"Invalid clean task ID format: {task_id}, expected prefix: {expected_prefix}")
+            return False
+            
+        return True
+    
+    async def submit_clean_task(self,
+                               knowledge_base_name: str,
+                               clean_settings: DocumentCleanSettings,
+                               trace_id: str = None) -> DocumentCleanTaskResponse:
+        """
+        提交文档清洗异步任务
         
         Args:
             knowledge_base_name: 知识库名称
@@ -220,212 +279,60 @@ class RetrievalHandlers:
             trace_id: 请求追踪ID
             
         Returns:
-            清洗结果响应
+            清洗任务响应
         """
-        logger.info(f"Start cleaning documents - TraceID: {trace_id}, KB: {knowledge_base_name}")
+        logger.info(f"Submit clean task - TraceID: {trace_id}, KB: {knowledge_base_name}")
         
-        # 1. 验证清洗设置
-        self.document_cleaner.validate_settings(clean_settings)
-        
-        # 2. 检查知识库是否存在
-        if not self.knowledge_manager.get_knowledge_base(knowledge_base_name):
-            raise ValueError(f"知识库 '{knowledge_base_name}' 不存在")
-        
-        # 3. 生成清洗设置哈希值，用于判断是否需要重新清洗
-        settings_hash = self.document_cleaner.generate_settings_hash(clean_settings)
-        
-        # 4. 获取需要清洗的文档（跳过已用相同设置清洗过的文档）
-        pending_documents = self._get_pending_documents_for_cleaning(
-            knowledge_base_name, settings_hash, trace_id
-        )
-        
-        if not pending_documents:
-            logger.info(f"No documents need cleaning - TraceID: {trace_id}")
-            return DocumentCleanResponse(
-                knowledge_base_name=knowledge_base_name,
-                total_files=0,
-                success_count=0,
-                failed_count=0,
-                total_chunks=0,
-                failed_files=[]
-            )
-        
-        # 5. 判断处理模式
-        processing_mode = self.document_cleaner.determine_processing_mode(len(pending_documents))
-        logger.info(f"Processing mode determined - TraceID: {trace_id}, Mode: {processing_mode}, Count: {len(pending_documents)}")
-        
-        # 6. 将数据库记录转换为Haystack Document对象
-        haystack_documents = self._convert_to_haystack_documents(pending_documents, trace_id)
-        
-        # 7. 执行文档清洗
-        if processing_mode == 'sync':
-            # 同步处理
-            chunks, stats, failed_docs = await self.document_cleaner.clean_documents_batch_with_timeout(
-                haystack_documents, clean_settings, trace_id
-            )
-        else:
-            # 异步处理
-            chunks, stats, failed_docs = await self.document_cleaner.clean_documents_in_chunks_with_timeout(
-                haystack_documents, clean_settings, trace_id
-            )
-        
-        # 8. 保存清洗结果和更新文档状态
-        self._save_cleaning_results(
-            knowledge_base_name, chunks, pending_documents, 
-            settings_hash, failed_docs, trace_id
-        )
-        
-        # 9. 构建响应
-        failed_file_details = [
-            FailedFileDetail(
-                filename=failed['filename'],
-                error_message=failed['error_message'],
-                error_code=failed.get('error_code')
-            )
-            for failed in failed_docs
-        ]
-        
-        logger.info(f"Document cleaning completed - TraceID: {trace_id}, Success: {stats['success_documents']}, Failed: {len(failed_docs)}, Chunks: {stats['output_chunks']}")
-        
-        return DocumentCleanResponse(
+        # 提交任务
+        return await self.clean_task_manager.submit_clean_task(
             knowledge_base_name=knowledge_base_name,
-            total_files=len(pending_documents),
-            success_count=stats['success_documents'],
-            failed_count=len(failed_docs),
-            total_chunks=stats['output_chunks'],
-            failed_files=failed_file_details
+            clean_settings=clean_settings,
+            trace_id=trace_id
         )
     
-    def _get_pending_documents_for_cleaning(self, 
-                                           knowledge_base_name: str, 
-                                           settings_hash: str,
-                                           trace_id: str = None) -> List[Dict]:
+    async def get_clean_task_status(self,
+                                   task_id: str,
+                                   trace_id: str = None) -> Dict[str, Any]:
         """
-        获取需要清洗的文档（跳过已清洗且设置未变的文档）
+        获取文档清洗任务状态
         
         Args:
-            knowledge_base_name: 知识库名称
-            settings_hash: 清洗设置哈希值
+            task_id: 任务ID
             trace_id: 请求追踪ID
             
         Returns:
-            需要清洗的文档列表
+            任务状态信息，如果任务不存在或ID格式错误则返回None
         """
-        logger.info(f"Getting pending documents for cleaning - TraceID: {trace_id}, KB: {knowledge_base_name}")
+        logger.info(f"Get clean task status - TraceID: {trace_id}, TaskID: {task_id}")
         
-        # 获取文档存储实例
-        doc_storage = MongoStorage(
-            db_name=self.config.get('retrieval_db_name', 'ai_backend_services_retrieval'),
-            collection_name=self.config.get('retrieval_document_collection_name', 'retrieval_documents')
-        )
+        # 验证任务ID格式
+        if not self._validate_clean_task_id(task_id):
+            logger.warning(f"Invalid clean task ID format - TraceID: {trace_id}, TaskID: {task_id}")
+            return None
         
-        # 查询条件：知识库匹配 且 (未清洗过 或 清洗设置变化了)
-        query = {
-            "knowledge_base_name": knowledge_base_name,
-            "$or": [
-                {"clean_status": {"$ne": "completed"}},  # 未清洗完成
-                {"clean_settings_hash": {"$ne": settings_hash}},  # 设置变化了
-                {"clean_settings_hash": {"$exists": False}}  # 从未清洗过
-            ]
-        }
-        
-        pending_docs = doc_storage.find_record(query)
-        logger.info(f"Found {len(pending_docs)} documents need cleaning - TraceID: {trace_id}")
-        
-        return pending_docs
-    
-    def _convert_to_haystack_documents(self, 
-                                     db_documents: List[Dict], 
-                                     trace_id: str = None) -> List[Document]:
+        # 获取任务状态
+        return await self.clean_task_manager.get_clean_task_status(task_id)
+
+    async def clean_documents(self,
+                             knowledge_base_name: str,
+                             clean_settings: DocumentCleanSettings,
+                             trace_id: str = None) -> DocumentCleanTaskResponse:
         """
-        将数据库文档记录转换为Haystack Document对象
-        
-        Args:
-            db_documents: 数据库文档记录列表
-            trace_id: 请求追踪ID
-            
-        Returns:
-            Haystack Document对象列表
-        """
-        logger.info(f"Converting to Haystack documents - TraceID: {trace_id}, Count: {len(db_documents)}")
-        
-        haystack_docs = []
-        docx_converter = DOCXToDocument()
-        
-        for db_doc in db_documents:
-            try:
-                filename = db_doc.get("filename", "unknown.docx")
-                gridfs_file_id = db_doc.get("gridfs_file_id")
-                
-                if not gridfs_file_id:
-                    logger.error(f"No GridFS file ID for document - TraceID: {trace_id}, File: {filename}")
-                    continue
-                
-                # 从GridFS读取文件内容
-                file_content = self.document_processor.mongo_storage.gridfs_get_file(ObjectId(gridfs_file_id))
-                
-                if not file_content:
-                    logger.error(f"Failed to read from GridFS - TraceID: {trace_id}, File: {filename}")
-                    continue
-                
-                # 创建临时文件进行转换
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as temp_file:
-                    temp_file.write(file_content)
-                    temp_file_path = temp_file.name
-                
-                try:
-                    # 使用Haystack DOCXToDocument转换器
-                    result = docx_converter.run(sources=[temp_file_path])
-                    converted_docs = result.get("documents", [])
-                    
-                    # 更新每个转换后的Document的元数据
-                    for doc in converted_docs:
-                        doc.meta.update({
-                            "filename": filename,
-                            "knowledge_base_name": db_doc.get("knowledge_base_name", ""),
-                            "document_id": str(db_doc.get("_id", "")),
-                            "original_file_size": db_doc.get("file_size", 0),
-                            "upload_time": db_doc.get("upload_time")
-                        })
-                    
-                    haystack_docs.extend(converted_docs)
-                    logger.debug(f"Converted document - TraceID: {trace_id}, File: {filename}, Chunks: {len(converted_docs)}")
-                    
-                finally:
-                    # 清理临时文件
-                    if os.path.exists(temp_file_path):
-                        os.unlink(temp_file_path)
-                        
-            except Exception as e:
-                logger.error(f"Failed to convert document - TraceID: {trace_id}, File: {db_doc.get('filename', 'unknown')}: {str(e)}")
-                continue
-        
-        logger.info(f"Converted {len(haystack_docs)} Haystack documents from {len(db_documents)} DB records - TraceID: {trace_id}")
-        return haystack_docs
-    
-    def _save_cleaning_results(self,
-                              knowledge_base_name: str,
-                              chunks: List[Document],
-                              original_documents: List[Dict],
-                              settings_hash: str,
-                              failed_docs: List[Dict],
-                              trace_id: str = None):
-        """
-        保存清洗结果并更新文档状态
+        提交文档清洗异步任务（兼容旧接口）
         
         Args:
             knowledge_base_name: 知识库名称
-            chunks: 清洗后的文档块
-            original_documents: 原始文档记录
-            settings_hash: 清洗设置哈希值
-            failed_docs: 失败文档列表
+            clean_settings: 清洗设置
             trace_id: 请求追踪ID
+            
+        Returns:
+            清洗任务响应
         """
-        logger.info(f"Saving cleaning results - TraceID: {trace_id}, Chunks: {len(chunks)}, Failed: {len(failed_docs)}")
+        logger.info(f"Clean documents (async mode) - TraceID: {trace_id}, KB: {knowledge_base_name}")
         
-        # TODO: 实现保存逻辑
-        # 1. 将chunks保存到专门的chunks集合
-        # 2. 更新原始文档的clean_status和clean_settings_hash
-        # 3. 更新知识库统计信息
-        
-        pass
+        # 调用新的异步任务提交方法
+        return await self.submit_clean_task(
+            knowledge_base_name=knowledge_base_name,
+            clean_settings=clean_settings,
+            trace_id=trace_id
+        )

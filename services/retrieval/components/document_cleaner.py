@@ -8,12 +8,18 @@ LastEditTime: 2025-09-08 17:07:59
 
 import asyncio
 import hashlib
+import os
 from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
+from pathlib import Path
+
+# HanLP环境变量已在app.py中设置，这里直接导入即可
 from haystack import Document
 from haystack.components.preprocessors import DocumentSplitter
 from haystack_integrations.components.preprocessors.hanlp import ChineseDocumentSplitter
 from loguru import logger
+
+logger.info(f"Using HANLP_HOME: {os.environ.get('HANLP_HOME', 'NOT SET')}")
 
 from ..schemas import DocumentLanguage, SplitMethod, ChineseGranularity, DocumentCleanSettings
 from core.config import get_services_config
@@ -47,22 +53,6 @@ class DocumentCleaner:
             
         logger.info(f"DocumentCleaner initialized with performance config: {self.perf_config}")
     
-    def determine_processing_mode(self, pending_count: int) -> str:
-        """
-        确定处理模式
-        
-        Args:
-            pending_count: 待处理文档数量
-            
-        Returns:
-            处理模式：'sync', 'async'
-        """
-        if pending_count <= self.perf_config['sync_threshold']:
-            return 'sync'
-        else:
-            # 超过同步阈值的都用异步处理，不拒绝用户请求
-            return 'async'
-    
     def generate_settings_hash(self, settings: DocumentCleanSettings) -> str:
         """生成清洗设置的哈希值，用于判断是否需要重新清洗"""
         settings_str = f"{settings.language}_{settings.split_method}_{settings.split_length}_{settings.split_overlap}"
@@ -87,21 +77,28 @@ class DocumentCleaner:
             if not settings.custom_separator:
                 raise ValueError("使用自定义分割方式时必须提供custom_separator")
             
-            return ChineseDocumentSplitter(
+            splitter = ChineseDocumentSplitter(
                 split_by="function",
                 split_length=settings.split_length,
                 split_overlap=settings.split_overlap,
                 splitting_function=lambda text: text.split(settings.custom_separator),
                 granularity=settings.chinese_granularity.value if settings.chinese_granularity else "coarse"
             )
+        else:
+            # 标准分割方式
+            splitter = ChineseDocumentSplitter(
+                split_by=settings.split_method.value,
+                split_length=settings.split_length, 
+                split_overlap=settings.split_overlap,
+                granularity=settings.chinese_granularity.value if settings.chinese_granularity else "coarse"
+            )
         
-        # 标准分割方式
-        return ChineseDocumentSplitter(
-            split_by=settings.split_method.value,
-            split_length=settings.split_length, 
-            split_overlap=settings.split_overlap,
-            granularity=settings.chinese_granularity.value if settings.chinese_granularity else "coarse"
-        )
+        # 预热中文分割器（加载必要的模型）
+        logger.info("Warming up ChineseDocumentSplitter...")
+        splitter.warm_up()
+        logger.info("ChineseDocumentSplitter warm-up completed")
+        
+        return splitter
     
     def _create_english_splitter(self, settings: DocumentCleanSettings) -> DocumentSplitter:
         """创建英文分割器"""
@@ -232,71 +229,6 @@ class DocumentCleaner:
         except Exception as e:
             logger.error(f"Document cleaning batch failed - TraceID: {trace_id}: {str(e)}")
             raise
-    
-    async def clean_documents_in_chunks_with_timeout(self,
-                                                   documents: List[Document],
-                                                   settings: DocumentCleanSettings,
-                                                   trace_id: str = None) -> Tuple[List[Document], Dict[str, Any], List[Dict]]:
-        """
-        分块清洗大量文档（用于异步处理），带超时控制
-        
-        Args:
-            documents: 待清洗的文档列表
-            settings: 清洗设置
-            trace_id: 请求追踪ID
-            
-        Returns:
-            Tuple[清洗后的文档块列表, 处理统计信息, 失败文档列表]
-        """
-        logger.info(f"Start chunked cleaning with timeout - TraceID: {trace_id}, Total: {len(documents)}")
-        
-        all_chunks = []
-        all_failed_docs = []
-        total_success = 0
-        chunk_size = self.perf_config['chunk_batch_size']
-        
-        # 分批处理
-        for i in range(0, len(documents), chunk_size):
-            batch_docs = documents[i:i + chunk_size]
-            batch_num = i // chunk_size + 1
-            total_batches = (len(documents) + chunk_size - 1) // chunk_size
-            
-            logger.info(f"Processing batch {batch_num}/{total_batches} - TraceID: {trace_id}")
-            
-            try:
-                batch_chunks, batch_stats, batch_failed = await self.clean_documents_batch_with_timeout(
-                    batch_docs, settings, trace_id
-                )
-                
-                all_chunks.extend(batch_chunks)
-                all_failed_docs.extend(batch_failed)
-                total_success += batch_stats['success_documents']
-                
-            except Exception as e:
-                logger.error(f"Batch {batch_num} failed - TraceID: {trace_id}: {str(e)}")
-                # 将整个批次标记为失败
-                for doc in batch_docs:
-                    all_failed_docs.append({
-                        "filename": doc.meta.get('filename', 'unknown'),
-                        "error_message": f"批次处理失败: {str(e)}",
-                        "error_code": "BATCH_ERROR"
-                    })
-        
-        # 总体统计信息
-        stats = {
-            "input_documents": len(documents),
-            "success_documents": total_success,
-            "failed_documents": len(all_failed_docs),
-            "output_chunks": len(all_chunks),
-            "avg_chunk_size": self._calculate_avg_chunk_size(all_chunks),
-            "language_used": settings.language.value,
-            "split_method_used": settings.split_method.value,
-            "splitter_type": "chinese" if settings.language == DocumentLanguage.CHINESE else "english",
-            "batches_processed": (len(documents) + chunk_size - 1) // chunk_size
-        }
-        
-        logger.info(f"Chunked cleaning completed - TraceID: {trace_id}, Success: {total_success}, Failed: {len(all_failed_docs)}, Total chunks: {len(all_chunks)}")
-        return all_chunks, stats, all_failed_docs
     
     def _calculate_avg_chunk_size(self, documents: List[Document]) -> float:
         """计算平均块大小"""

@@ -53,7 +53,7 @@ services:
     # MongoDB配置
     retrieval_db_name: "ai_backend_services_retrieval"
     retrieval_document_collection_name: "retrieval_documents"
-    retrieval_kb_collection_name: "retrieval_knowledge_bases"
+    retrieval_kb_collection_name: "retrieval_knowledge_bases" # 知识库元数据管理
     # 文件配置
     max_file_size: 52428800  # 50MB
     max_files_per_request: 10  # 单次请求最大文件数量
