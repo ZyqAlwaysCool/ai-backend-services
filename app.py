@@ -9,10 +9,9 @@ from pathlib import Path
 # 🔧 关键修复：必须在导入任何其他模块之前设置HanLP环境变量
 # 因为HanLP库在第一次导入时就会确定模型缓存路径
 project_root = Path(__file__).parent
-hanlp_cache_dir = project_root / 'hanlp_models'
+hanlp_cache_dir = project_root / 'models' / 'hanlp_models'
 hanlp_cache_dir.mkdir(exist_ok=True)
 os.environ['HANLP_HOME'] = str(hanlp_cache_dir)
-print(f"HanLP模型缓存路径设置为: {hanlp_cache_dir}")
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware

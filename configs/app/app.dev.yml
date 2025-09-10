@@ -33,4 +33,10 @@ qdrant:
   host: "localhost"
   port: 6333
   timeout: 30
-  embedding_dim: 768  # 根据实际embedding模型调整
+  embedding_dim: 1024  # 根据实际embedding模型调整
+
+# Embedding模型配置
+embedding:
+  model_path: "models/Qwen3-Embedding-0___6B"  # 模型路径(相对于项目根目录)
+  device: "cuda:2"  # 运行设备: cpu, cuda, cuda:0, cuda:1等
+  batch_size: 8  # 批处理大小

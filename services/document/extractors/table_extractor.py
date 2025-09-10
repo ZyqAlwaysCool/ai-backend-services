@@ -4,6 +4,7 @@
 从PDF页面中提取表格并转换为HTML格式。
 """
 
+import asyncio
 from typing import Dict, Any, List
 from loguru import logger
 
@@ -18,37 +19,48 @@ class TableExtractor:
     async def extract_from_page(self, page, page_num: int) -> List[Dict]:
         """从PDF页面提取表格块"""
         try:
-            tables = page.find_tables()
-            table_blocks = []
+            # 将同步操作移到线程池中执行
+            tables = await asyncio.to_thread(page.find_tables)
             
-            for table_index, table in enumerate(tables):
-                try:
-                    # 提取表格数据
-                    table_rows = table.extract()
-                    if table_rows:
-                        # 转换为HTML格式
-                        table_html = self._convert_table_to_html(
-                            table_rows, 
-                            f"page{page_num + 1}_table{table_index + 1}"
-                        )
-                        
-                        table_blocks.append({
-                            "type": "table",
-                            "bbox": table.bbox,
-                            "y": table.bbox[1],
-                            "x": table.bbox[0],
-                            "content": f"\n[表格 {page_num + 1}-{table_index + 1}]\n{table_html}\n"
-                        })
-                        
-                except Exception as e:
-                    logger.warning(f"Failed to extract table {table_index} from page {page_num}: {str(e)}")
-                    continue
+            # 表格处理也可能耗时，放到线程池中
+            table_blocks = await asyncio.to_thread(
+                self._process_tables, tables, page_num
+            )
             
             return table_blocks
             
         except Exception as e:
             logger.error(f"Failed to extract tables from page {page_num}: {str(e)}")
             return []
+    
+    def _process_tables(self, tables, page_num: int) -> List[Dict]:
+        """处理表格（同步方法）"""
+        table_blocks = []
+        
+        for table_index, table in enumerate(tables):
+            try:
+                # 提取表格数据
+                table_rows = table.extract()
+                if table_rows:
+                    # 转换为HTML格式
+                    table_html = self._convert_table_to_html(
+                        table_rows, 
+                        f"page{page_num + 1}_table{table_index + 1}"
+                    )
+                    
+                    table_blocks.append({
+                        "type": "table",
+                        "bbox": table.bbox,
+                        "y": table.bbox[1],
+                        "x": table.bbox[0],
+                        "content": f"\n[表格 {page_num + 1}-{table_index + 1}]\n{table_html}\n"
+                    })
+                    
+            except Exception as e:
+                logger.warning(f"Failed to extract table {table_index} from page {page_num}: {str(e)}")
+                continue
+        
+        return table_blocks
     
     def _convert_table_to_html(self, table_data: List, table_id: str = "") -> str:
         """将表格数据转换为HTML格式"""

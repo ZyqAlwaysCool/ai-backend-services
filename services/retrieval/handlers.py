@@ -22,10 +22,10 @@ from core.tasks import TaskManagerFactory
 from .components.document_processor import DocumentProcessor
 from .components.document_cleaner import DocumentCleaner
 from .managers.knowledge_manager import KnowledgeBaseManager
-from .task_managers.document_clean_task_manager import DocumentCleanTaskManager
+from .task_managers.knowledge_base_build_task_manager import KnowledgeBaseBuildTaskManager
 from .schemas import (
     RetrievalUploadResponse, FileUploadResult,
-    DocumentCleanRequest, DocumentCleanTaskResponse, CleanTaskStatusResponse, DocumentCleanSettings,
+    KnowledgeBaseBuildRequest, KnowledgeBaseBuildResponse, BuildTaskStatusResponse, DocumentCleanSettings,
     FailedFileDetail, RetrievalTaskTypePrefix
 )
 
@@ -40,7 +40,7 @@ class RetrievalHandlers:
         self.document_cleaner = None
         self.knowledge_manager = None
         self.document_stores = {}  # 缓存每个知识库的DocumentStore
-        self.clean_task_manager = None  # 文档清洗任务管理器
+        self.build_task_manager = None  # 知识库构建任务管理器
     
     async def initialize(self):
         """轻量级初始化Retrieval服务处理器"""
@@ -52,8 +52,8 @@ class RetrievalHandlers:
         # 创建任务管理后端
         queue_backend, storage_backend = TaskManagerFactory.create_default_backends()
         
-        # 初始化文档清洗任务管理器
-        self.clean_task_manager = DocumentCleanTaskManager(
+        # 初始化知识库构建任务管理器
+        self.build_task_manager = KnowledgeBaseBuildTaskManager(
             queue_backend,
             storage_backend,
             self.config
@@ -246,32 +246,32 @@ class RetrievalHandlers:
             upload_results=upload_results
         )
     
-    def _validate_clean_task_id(self, task_id: str) -> bool:
-        """验证清洗任务ID格式
+    def _validate_build_task_id(self, task_id: str) -> bool:
+        """验证构建任务ID格式
         
         Args:
             task_id: 任务ID
             
         Returns:
-            是否为有效的清洗任务ID格式
+            是否为有效的构建任务ID格式
         """
         if not task_id:
             return False
             
         # 检查任务ID前缀
-        expected_prefix = RetrievalTaskTypePrefix.CLEAN_TASK.value
+        expected_prefix = RetrievalTaskTypePrefix.BUILD_TASK.value
         if not task_id.startswith(expected_prefix):
-            logger.warning(f"Invalid clean task ID format: {task_id}, expected prefix: {expected_prefix}")
+            logger.warning(f"Invalid build task ID format: {task_id}, expected prefix: {expected_prefix}")
             return False
             
         return True
     
-    async def submit_clean_task(self,
+    async def submit_build_task(self,
                                knowledge_base_name: str,
                                clean_settings: DocumentCleanSettings,
-                               trace_id: str = None) -> DocumentCleanTaskResponse:
+                               trace_id: str = None) -> KnowledgeBaseBuildResponse:
         """
-        提交文档清洗异步任务
+        提交知识库构建异步任务（文档清洗+向量化）
         
         Args:
             knowledge_base_name: 知识库名称
@@ -279,22 +279,22 @@ class RetrievalHandlers:
             trace_id: 请求追踪ID
             
         Returns:
-            清洗任务响应
+            知识库构建任务响应
         """
-        logger.info(f"Submit clean task - TraceID: {trace_id}, KB: {knowledge_base_name}")
+        logger.info(f"Submit build task - TraceID: {trace_id}, KB: {knowledge_base_name}")
         
         # 提交任务
-        return await self.clean_task_manager.submit_clean_task(
+        return await self.build_task_manager.submit_build_task(
             knowledge_base_name=knowledge_base_name,
             clean_settings=clean_settings,
             trace_id=trace_id
         )
     
-    async def get_clean_task_status(self,
+    async def get_build_task_status(self,
                                    task_id: str,
                                    trace_id: str = None) -> Dict[str, Any]:
         """
-        获取文档清洗任务状态
+        获取知识库构建任务状态
         
         Args:
             task_id: 任务ID
@@ -303,22 +303,22 @@ class RetrievalHandlers:
         Returns:
             任务状态信息，如果任务不存在或ID格式错误则返回None
         """
-        logger.info(f"Get clean task status - TraceID: {trace_id}, TaskID: {task_id}")
+        logger.info(f"Get build task status - TraceID: {trace_id}, TaskID: {task_id}")
         
         # 验证任务ID格式
-        if not self._validate_clean_task_id(task_id):
-            logger.warning(f"Invalid clean task ID format - TraceID: {trace_id}, TaskID: {task_id}")
+        if not self._validate_build_task_id(task_id):
+            logger.warning(f"Invalid build task ID format - TraceID: {trace_id}, TaskID: {task_id}")
             return None
         
         # 获取任务状态
-        return await self.clean_task_manager.get_clean_task_status(task_id)
+        return await self.build_task_manager.get_build_task_status(task_id)
 
-    async def clean_documents(self,
-                             knowledge_base_name: str,
-                             clean_settings: DocumentCleanSettings,
-                             trace_id: str = None) -> DocumentCleanTaskResponse:
+    async def build_knowledge_base(self,
+                                  knowledge_base_name: str,
+                                  clean_settings: DocumentCleanSettings,
+                                  trace_id: str = None) -> KnowledgeBaseBuildResponse:
         """
-        提交文档清洗异步任务（兼容旧接口）
+        构建知识库（文档清洗+向量化）
         
         Args:
             knowledge_base_name: 知识库名称
@@ -326,12 +326,12 @@ class RetrievalHandlers:
             trace_id: 请求追踪ID
             
         Returns:
-            清洗任务响应
+            知识库构建任务响应
         """
-        logger.info(f"Clean documents (async mode) - TraceID: {trace_id}, KB: {knowledge_base_name}")
+        logger.info(f"Build knowledge base - TraceID: {trace_id}, KB: {knowledge_base_name}")
         
-        # 调用新的异步任务提交方法
-        return await self.submit_clean_task(
+        # 调用知识库构建任务提交方法
+        return await self.submit_build_task(
             knowledge_base_name=knowledge_base_name,
             clean_settings=clean_settings,
             trace_id=trace_id

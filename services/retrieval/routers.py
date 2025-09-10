@@ -11,13 +11,13 @@ from loguru import logger
 
 from core.schemas.base_resp_model_define import BaseResponse
 from core.exceptions import ValidationException, BaseBusinessException
-from .schemas import RetrievalUploadRequest, RetrievalUploadResponse, DocumentCleanRequest, DocumentCleanTaskResponse, CleanTaskStatusResponse
+from .schemas import RetrievalUploadRequest, RetrievalUploadResponse, KnowledgeBaseBuildRequest, KnowledgeBaseBuildResponse, BuildTaskStatusResponse
 
 # 创建retrieval服务路由
-retrieval_router = APIRouter()
+retrieval_router = APIRouter(tags=["向量检索服务"])
 
 
-@retrieval_router.post("/upload-files", response_model=BaseResponse)
+@retrieval_router.post("/upload-files", response_model=BaseResponse, summary=["上传docx格式文档至知识库"])
 async def upload_documents(
     request: Request,
     knowledge_base_name: str = Form(..., description="知识库名称"),
@@ -99,25 +99,25 @@ async def upload_documents(
         return BaseResponse.error(code=500, msg="服务内部错误", trace_id=trace_id)
 
 
-@retrieval_router.get("/clean-document/{clean_task_id}", response_model=BaseResponse)
-async def get_clean_task_status(
+@retrieval_router.get("/build-task-status/{build_task_id}", response_model=BaseResponse, summary=["获取知识库构建任务状态"])
+async def get_build_task_status(
     request: Request,
-    clean_task_id: str
+    build_task_id: str
 ):
     """
-    查询文档清洗任务状态
+    查询知识库构建任务状态
     
-    - **clean_task_id**: 清洗任务ID
+    - **build_task_id**: 构建任务ID
     """
     trace_id = getattr(request.state, 'trace_id', str(uuid.uuid4()))
-    logger.info(f"Received clean task status query - TraceID: {trace_id}, TaskID: {clean_task_id}")
+    logger.info(f"Received build task status query - TraceID: {trace_id}, TaskID: {build_task_id}")
     
     try:
         # 验证参数
-        if not clean_task_id or not clean_task_id.strip():
+        if not build_task_id or not build_task_id.strip():
             return BaseResponse.error(
                 code=400,
-                msg="清洗任务ID不能为空",
+                msg="构建任务ID不能为空",
                 trace_id=trace_id
             )
         
@@ -134,15 +134,15 @@ async def get_clean_task_status(
             )
         
         # 调用业务逻辑处理（包含任务ID格式校验）
-        result = await handlers.get_clean_task_status(
-            task_id=clean_task_id.strip(),
+        result = await handlers.get_build_task_status(
+            task_id=build_task_id.strip(),
             trace_id=trace_id
         )
         
         if result is None:
             return BaseResponse.error(
                 code=404,
-                msg="清洗任务不存在或任务ID格式错误",
+                msg="构建任务不存在或任务ID格式错误",
                 trace_id=trace_id
             )
         
@@ -162,20 +162,20 @@ async def get_clean_task_status(
         return BaseResponse.error(code=500, msg="服务内部错误", trace_id=trace_id)
 
 
-@retrieval_router.post("/clean-document", response_model=BaseResponse)
-async def clean_documents(
+@retrieval_router.post("/build-knowledge-base", response_model=BaseResponse, summary=["构建知识库"])
+async def build_knowledge_base(
     request: Request,
-    clean_request: DocumentCleanRequest
+    build_request: KnowledgeBaseBuildRequest
 ):
     """
-    清洗知识库中的文档,将文档分割成可检索的块,通过haystack管理
+    构建知识库：清洗文档并进行向量化，生成可检索的知识库
     """
     trace_id = getattr(request.state, 'trace_id', str(uuid.uuid4()))
-    logger.info(f"Received clean documents request - TraceID: {trace_id}")
+    logger.info(f"Received build knowledge base request - TraceID: {trace_id}")
     
     try:
         # 验证参数
-        if not clean_request.knowledge_base_name or not clean_request.knowledge_base_name.strip():
+        if not build_request.knowledge_base_name or not build_request.knowledge_base_name.strip():
             return BaseResponse.error(
                 code=400,
                 msg="知识库名称不能为空",
@@ -194,10 +194,10 @@ async def clean_documents(
                 trace_id=trace_id
             )
         
-        # 调用异步业务逻辑处理
-        result = await handlers.clean_documents(
-            knowledge_base_name=clean_request.knowledge_base_name.strip(),
-            clean_settings=clean_request.clean_settings,
+        # 调用知识库构建业务逻辑处理
+        result = await handlers.build_knowledge_base(
+            knowledge_base_name=build_request.knowledge_base_name.strip(),
+            clean_settings=build_request.clean_settings,
             trace_id=trace_id
         )
         

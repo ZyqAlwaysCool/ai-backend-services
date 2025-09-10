@@ -60,7 +60,10 @@ class AppConfig(BaseModel):
     qdrant_host: str = Field("localhost", description="Qdrant主机")
     qdrant_port: int = Field(6333, description="Qdrant端口", ge=1, le=65535)
     qdrant_timeout: int = Field(30, description="Qdrant超时时间(秒)", ge=1, le=300)
-    embedding_dim: int = Field(768, description="向量维度", ge=128, le=4096)
+    embedding_dim: int = Field(1024, description="向量维度", ge=128, le=4096)
+    embedding_model_path: str = Field("models/Qwen3-Embedding-0___6B", description="Embedding模型路径(相对于项目根目录)")
+    embedding_batch_size: int = Field(8, description="Embedding批处理大小", ge=1, le=128)
+    embedding_device: str = Field("cpu", description="Embedding模型运行设备(cpu/cuda/cuda:0/cuda:1等)")
     
     class Config:
         frozen = True
@@ -256,6 +259,14 @@ def load_app_config() -> AppConfig:
                 'embedding_dim': qdrant_config.get('embedding_dim', 768)
             })
         
+        if 'embedding' in raw_config:
+            embedding_config = raw_config['embedding']
+            config_dict.update({
+                'embedding_model_path': embedding_config.get('model_path', 'models/Qwen3-Embedding-4B'),
+                'embedding_batch_size': embedding_config.get('batch_size', 8),
+                'embedding_device': embedding_config.get('device', 'cpu')
+            })
+        
         # 支持环境变量覆盖
         config_dict['mongo_host'] = os.getenv('MONGO_HOST', config_dict.get('mongo_host', '127.0.0.1'))
         config_dict['mongo_port'] = int(os.getenv('MONGO_PORT', config_dict.get('mongo_port', 27017)))
@@ -274,6 +285,9 @@ def load_app_config() -> AppConfig:
         config_dict['qdrant_port'] = int(os.getenv('QDRANT_PORT', config_dict.get('qdrant_port', 6333)))
         config_dict['qdrant_timeout'] = int(os.getenv('QDRANT_TIMEOUT', config_dict.get('qdrant_timeout', 30)))
         config_dict['embedding_dim'] = int(os.getenv('EMBEDDING_DIM', config_dict.get('embedding_dim', 768)))
+        config_dict['embedding_model_path'] = os.getenv('EMBEDDING_MODEL_PATH', config_dict.get('embedding_model_path', 'models/Qwen3-Embedding-4B'))
+        config_dict['embedding_batch_size'] = int(os.getenv('EMBEDDING_BATCH_SIZE', config_dict.get('embedding_batch_size', 8)))
+        config_dict['embedding_device'] = os.getenv('EMBEDDING_DEVICE', config_dict.get('embedding_device', 'cpu'))
         
         return AppConfig(**config_dict)
     except Exception as e:

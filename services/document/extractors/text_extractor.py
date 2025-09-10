@@ -4,6 +4,7 @@
 从PDF页面中提取文本内容。
 """
 
+import asyncio
 from typing import Dict, Any, List
 from loguru import logger
 
@@ -18,32 +19,42 @@ class TextExtractor:
     async def extract_from_page(self, page, page_num: int) -> List[Dict]:
         """从PDF页面提取文本块"""
         try:
-            text_dict = page.get_text("dict")
+            # 将同步操作移到线程池中执行
+            text_dict = await asyncio.to_thread(page.get_text, "dict")
             text_blocks = []
             
-            for block in text_dict["blocks"]:
-                if "lines" in block:  # 文本块
-                    bbox = block["bbox"]  # [x0, y0, x1, y1]
-                    block_text = ""
-                    
-                    for line in block["lines"]:
-                        line_text = ""
-                        for span in line["spans"]:
-                            line_text += span["text"]
-                        if line_text.strip():
-                            block_text += line_text + "\n"
-                    
-                    if block_text.strip():
-                        text_blocks.append({
-                            "type": "text",
-                            "bbox": bbox,
-                            "y": bbox[1],
-                            "x": bbox[0],
-                            "content": block_text.strip()
-                        })
+            # 文本处理也可能耗时，同样放到线程池中
+            text_blocks = await asyncio.to_thread(self._process_text_blocks, text_dict)
             
             return text_blocks
             
         except Exception as e:
             logger.error(f"Failed to extract text from page {page_num}: {str(e)}")
             return []
+    
+    def _process_text_blocks(self, text_dict: Dict) -> List[Dict]:
+        """处理文本块（同步方法）"""
+        text_blocks = []
+        
+        for block in text_dict["blocks"]:
+            if "lines" in block:  # 文本块
+                bbox = block["bbox"]  # [x0, y0, x1, y1]
+                block_text = ""
+                
+                for line in block["lines"]:
+                    line_text = ""
+                    for span in line["spans"]:
+                        line_text += span["text"]
+                    if line_text.strip():
+                        block_text += line_text + "\n"
+                
+                if block_text.strip():
+                    text_blocks.append({
+                        "type": "text",
+                        "bbox": bbox,
+                        "y": bbox[1],
+                        "x": bbox[0],
+                        "content": block_text.strip()
+                    })
+        
+        return text_blocks

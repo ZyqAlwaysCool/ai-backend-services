@@ -70,9 +70,10 @@ class DocumentCleanSettings(BaseModel):
         description="自定义分隔符(仅split_method=custom时生效)"
     )
 
-class DocumentCleanRequest(BaseModel):
+class KnowledgeBaseBuildRequest(BaseModel):
+    """知识库构建请求"""
     knowledge_base_name: str = Field(..., description="知识库名称", min_length=1)
-    clean_settings: DocumentCleanSettings = Field(..., description="清洗配置")
+    clean_settings: DocumentCleanSettings = Field(..., description="文档处理设置")
 
 class FailedFileDetail(BaseModel):
     """失败文件详情"""
@@ -82,29 +83,28 @@ class FailedFileDetail(BaseModel):
 
 class RetrievalTaskTypePrefix(str, Enum):
     """Retrieval服务任务类型前缀"""
-    CLEAN_TASK = "clean-task"
+    BUILD_TASK = "build-kb-task"          # 知识库构建任务
 
 
-class DocumentCleanTaskResponse(BaseModel):
-    """清洗任务提交响应"""
-    clean_task_id: str = Field(..., description="清洗任务ID")
+class KnowledgeBaseBuildResponse(BaseModel):
+    """知识库构建响应"""
+    build_task_id: str = Field(..., description="构建任务ID")
     knowledge_base_name: str = Field(..., description="知识库名称")
-    total_pending_files: int = Field(..., description="待处理文件数量")
+    settings_hash: str = Field(..., description="设置哈希值(版本标识)")
+    total_files: int = Field(..., description="待处理文件数量")
     created_at: str = Field(..., description="任务创建时间")
 
 
-class CleanTaskStatusResponse(BaseModel):
-    """清洗任务状态查询响应"""
-    clean_task_id: str = Field(..., description="清洗任务ID")
-    status: str = Field(..., description="任务状态: pending|processing|completed|failed|cancelled")
-    knowledge_base_name: str = Field(..., description="知识库名称") 
+class BuildTaskStatusResponse(BaseModel):
+    """构建任务状态响应"""
+    build_task_id: str = Field(..., description="构建任务ID")
+    status: str = Field(..., description="任务状态: pending|processing|completed|failed")
+    knowledge_base_name: str = Field(..., description="知识库名称")
+    settings_hash: str = Field(..., description="设置哈希值")
     total_files: int = Field(..., description="总文件数")
     processed_files: int = Field(..., description="已处理文件数")
-    successful_files: int = Field(..., description="成功处理文件数")
-    failed_files: int = Field(..., description="失败处理文件数")
     total_chunks: int = Field(..., description="生成的文档块总数")
     created_at: str = Field(..., description="创建时间")
-    started_at: Optional[str] = Field(None, description="开始处理时间") 
     completed_at: Optional[str] = Field(None, description="完成时间")
     error_message: Optional[str] = Field(None, description="错误信息")
     failed_files_detail: List[FailedFileDetail] = Field(default=[], description="失败文件详情")
