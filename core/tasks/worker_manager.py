@@ -48,7 +48,9 @@ class WorkerManager:
             'max_jobs': self.config.get('max_jobs', 10),
             'job_timeout': self.config.get('job_timeout', 3600),
             'keep_result': self.config.get('keep_result', 86400),
-            'health_check_interval': self.config.get('health_check_interval', 3600)
+            'health_check_interval': self.config.get('health_check_interval', 3600),
+            'retry_jobs': self.config.get('retry_jobs', True),  # 启用重试任务处理
+            'max_tries': self.config.get('max_tries', 3),       # 最大重试次数
         }
         
         # Worker实例和控制
@@ -72,6 +74,9 @@ class WorkerManager:
             max_jobs=self.worker_config['max_jobs'],
             job_timeout=self.worker_config['job_timeout'],
             keep_result=self.worker_config['keep_result'],
+            retry_jobs=self.worker_config['retry_jobs'],        # 启用重试任务处理
+            max_tries=self.worker_config['max_tries'],          # 最大重试次数
+            health_check_interval=self.worker_config['health_check_interval'],
             handle_signals=False  # 让FastAPI处理信号，避免Ctrl+C被阻塞
         )
     
