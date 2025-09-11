@@ -39,7 +39,7 @@ class RetrievalHandlers:
         self.document_processor = None
         self.document_cleaner = None
         self.knowledge_manager = None
-        self.document_stores = {}  # 缓存每个知识库的DocumentStore
+        # self.document_stores = {}  # 缓存每个知识库的DocumentStore
         self.build_task_manager = None  # 知识库构建任务管理器
     
     async def initialize(self):
@@ -61,26 +61,26 @@ class RetrievalHandlers:
         
         logger.info("Retrieval handlers初始化完成")
     
-    def _get_document_store(self, knowledge_base_name: str) -> QdrantDocumentStore:
-        """获取或创建知识库对应的QdrantDocumentStore"""
-        if knowledge_base_name not in self.document_stores:
-            # 获取应用配置
-            app_config = get_app_config()
+    # def _get_document_store(self, knowledge_base_name: str) -> QdrantDocumentStore:
+    #     """获取或创建知识库对应的QdrantDocumentStore"""
+    #     if knowledge_base_name not in self.document_stores:
+    #         # 获取应用配置
+    #         app_config = get_app_config()
             
-            # 为每个知识库创建独立的collection
-            self.document_stores[knowledge_base_name] = QdrantDocumentStore(
-                host=app_config.qdrant_host,
-                port=app_config.qdrant_port,
-                index=f"kb_{knowledge_base_name}",  # 每个知识库使用独立的index
-                embedding_dim=app_config.embedding_dim,
-                recreate_index=False,
-                return_embedding=True,
-                wait_result_from_api=True,
-                timeout=app_config.qdrant_timeout
-            )
-            logger.info(f"Created Qdrant DocumentStore for knowledge base: {knowledge_base_name} (host: {app_config.qdrant_host}:{app_config.qdrant_port})")
+    #         # 为每个知识库创建独立的collection
+    #         self.document_stores[knowledge_base_name] = QdrantDocumentStore(
+    #             host=app_config.qdrant_host,
+    #             port=app_config.qdrant_port,
+    #             index=f"kb_{knowledge_base_name}",  # 每个知识库使用独立的index
+    #             embedding_dim=app_config.embedding_dim,
+    #             recreate_index=False,
+    #             return_embedding=True,
+    #             wait_result_from_api=True,
+    #             timeout=app_config.qdrant_timeout
+    #         )
+    #         logger.info(f"Created Qdrant DocumentStore for knowledge base: {knowledge_base_name} (host: {app_config.qdrant_host}:{app_config.qdrant_port})")
         
-        return self.document_stores[knowledge_base_name]
+    #     return self.document_stores[knowledge_base_name]
     
     async def upload_documents(self, 
                               files: List[UploadFile], 
