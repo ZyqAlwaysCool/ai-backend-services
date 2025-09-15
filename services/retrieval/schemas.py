@@ -111,7 +111,8 @@ class BuildTaskStatusResponse(BaseModel):
     failed_files_detail: List[FailedFileDetail] = Field(default=[], description="失败文件详情")
 
 class RetrievalQueryRequest(BaseModel):
-    kb_name_with_version: str = Field(..., description="知识库名称(带版本号)")
+    knowledge_base_name: str = Field(..., description="知识库名称")
+    kb_version: str = Field(..., description="知识库版本")
     query_text: str = Field(..., description="检索内容")
 
 class SearchResult(BaseModel):
@@ -122,6 +123,21 @@ class SearchResult(BaseModel):
     metadata: Dict = Field(default={}, description="扩展元数据")
 
 class RetrievalQueryResponse(BaseModel):
-    kb_name_with_version: str = Field(..., description="知识库名称(带版本号)")
+    knowledge_base_name: str = Field(..., description="知识库名称")
+    kb_version: str = Field(..., description="知识库版本")
     query_text: str = Field(..., description="检索内容")
     results: List[SearchResult] = Field(..., description="检索结果列表")
+
+class KnowledgeBaseInfo(BaseModel):
+    knowledge_base_name: str = Field(..., description="知识库名称")
+    kb_version: str = Field(..., description="知识库版本ID")
+    document_count: int = Field(..., description="文档数量")
+    chunk_count: int = Field(..., description="文档块数量")
+    chunk_method: str = Field(..., description="切片方式")
+    chunk_settings: Dict = Field(..., description="切片配置详情")
+    created_at: str = Field(..., description="创建时间")
+    metadata: Dict = Field(default={}, description="扩展元数据")
+
+class KnowledgeBaseQueryResponse(BaseModel):
+    knowledge_base_name: str = Field(..., description="知识库名称")
+    knowledge_base_details: Optional[List[KnowledgeBaseInfo]] = Field([], description="知识库各版本配置信息")

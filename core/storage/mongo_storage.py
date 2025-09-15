@@ -7,7 +7,7 @@ LastEditTime: 2025-08-08 11:17:32
 '''
 
 import os
-from typing import List
+from typing import List, Tuple
 from pathlib import Path
 import gridfs
 import yaml
@@ -91,18 +91,33 @@ class MongoStorage:
         self.col.delete_one(data)
         logger.info(f"delete record success.")
     
-    def find_record(self, filter: dict) -> List[dict]:
-        logger.info(f"find record. filter=({filter})")
+    def find_record(self, filter: dict, sort: List[Tuple] = None, limit: int = None) -> List[dict]:
+        logger.info(f"find record. filter=({filter}) sort=({sort}) limit=({limit})")
+        cursor = self.col.find(filter)
+        
+        if sort:
+            cursor = cursor.sort(sort)
+        if limit:
+            cursor = cursor.limit(limit)
+            
         record_list = []
-        for doc in self.col.find(filter):
+        for doc in cursor:
             record_list.append(doc)
-        logger.info(f"find record success.")
+        logger.info(f"find record success. count={len(record_list)}")
         return record_list
     
-    def update_record(self, filter: dict, data: dict) -> None:
+    def update_record(self, filter: dict, data: dict) -> bool:
         logger.info(f"update record. filter=({filter}) data=({data})")
-        self.col.update_one(filter, {"$set": data})
-        logger.info(f"update record success.")
+        result = self.col.update_one(filter, {"$set": data})
+        logger.info(f"update record success. matched: {result.matched_count}, modified: {result.modified_count}")
+        return result.modified_count > 0
+    
+    def update_many(self, filter: dict, data: dict) -> int:
+        """批量更新记录"""
+        logger.info(f"update many records. filter=({filter}) data=({data})")
+        result = self.col.update_many(filter, {"$set": data})
+        logger.info(f"update many records success. matched: {result.matched_count}, modified: {result.modified_count}")
+        return result.modified_count
             
     def close_client(self) -> None:
         logger.info(f"close mongo client.")

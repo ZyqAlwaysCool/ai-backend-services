@@ -11,6 +11,8 @@ from datetime import datetime
 from loguru import logger
 
 from core.storage.mongo_storage import MongoStorage
+from .version_manager import RetrievalVersionManager
+from ..schemas import DocumentCleanSettings
 
 
 class KnowledgeBaseManager:
@@ -23,6 +25,9 @@ class KnowledgeBaseManager:
             db_name=config.get('retrieval_db_name', 'ai_backend_services_retrieval'),
             collection_name=config.get('retrieval_kb_collection_name', 'retrieval_knowledge_bases')
         )
+        
+        # 初始化版本管理器
+        self.version_manager = RetrievalVersionManager(config)
     
     def create_knowledge_base(self, knowledge_base_name: str) -> bool:
         """
@@ -155,3 +160,107 @@ class KnowledgeBaseManager:
         except Exception as e:
             logger.error(f"Failed to delete knowledge base {knowledge_base_name}: {str(e)}")
             return False
+    
+    # ==================== 版本管理相关方法 ====================
+    
+    def create_knowledge_base_version(self, knowledge_base_name: str, 
+                                    clean_settings: DocumentCleanSettings,
+                                    settings_hash: str) -> str:
+        """
+        创建知识库版本
+        
+        Args:
+            knowledge_base_name: 知识库名称
+            clean_settings: 清洗配置
+            settings_hash: 设置哈希值
+            
+        Returns:
+            创建的版本号
+        """
+        try:
+            # 确保知识库基础信息存在
+            if not self.get_knowledge_base(knowledge_base_name):
+                self.create_knowledge_base(knowledge_base_name)
+            
+            # 创建版本
+            version = self.version_manager.create_kb_version(
+                knowledge_base_name=knowledge_base_name,
+                clean_settings=clean_settings,
+                settings_hash=settings_hash
+            )
+            
+            logger.info(f"Knowledge base version created: {knowledge_base_name} -> {version}")
+            return version
+            
+        except Exception as e:
+            logger.error(f"Failed to create knowledge base version {knowledge_base_name}: {str(e)}")
+            raise
+    
+    def get_knowledge_base_versions(self, knowledge_base_name: str) -> List[Dict]:
+        """
+        获取知识库所有版本
+        
+        Args:
+            knowledge_base_name: 知识库名称
+            
+        Returns:
+            版本列表
+        """
+        try:
+            return self.version_manager.get_kb_versions(knowledge_base_name)
+        except Exception as e:
+            logger.error(f"Failed to get knowledge base versions {knowledge_base_name}: {str(e)}")
+            return []
+    
+    def get_latest_knowledge_base_version(self, knowledge_base_name: str) -> Optional[Dict]:
+        """
+        获取知识库最新版本
+        
+        Args:
+            knowledge_base_name: 知识库名称
+            
+        Returns:
+            最新版本信息
+        """
+        try:
+            return self.version_manager.get_latest_kb_version(knowledge_base_name)
+        except Exception as e:
+            logger.error(f"Failed to get latest knowledge base version {knowledge_base_name}: {str(e)}")
+            return None
+    
+    def update_knowledge_base_version_stats(self, knowledge_base_name: str, version: str,
+                                          document_count: int = None, chunk_count: int = None) -> bool:
+        """
+        更新知识库版本统计信息
+        
+        Args:
+            knowledge_base_name: 知识库名称  
+            version: 版本号
+            document_count: 文档数量
+            chunk_count: 文档块数量
+            
+        Returns:
+            更新成功返回True
+        """
+        try:
+            return self.version_manager.update_kb_version_stats(
+                knowledge_base_name=knowledge_base_name,
+                version=version,
+                document_count=document_count,
+                chunk_count=chunk_count
+            )
+        except Exception as e:
+            logger.error(f"Failed to update knowledge base version stats {knowledge_base_name}@{version}: {str(e)}")
+            return False
+    
+    def parse_version_info(self, version: str) -> Dict:
+        """
+        解析版本号信息
+        
+        Args:
+            version: 版本号
+            
+        Returns:
+            版本解析信息
+        """
+        return self.version_manager.parse_version_info(version)

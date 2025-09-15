@@ -39,4 +39,4 @@ qdrant:
 embedding:
   model_path: "models/Qwen3-Embedding-0___6B"  # 模型路径(相对于项目根目录)
   device: "cuda:2"  # 运行设备: cpu, cuda, cuda:0, cuda:1等
-  batch_size: 8  # 批处理大小
+  batch_size: 4  # 批处理大小

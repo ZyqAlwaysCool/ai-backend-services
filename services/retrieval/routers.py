@@ -13,7 +13,7 @@ from core.schemas.base_resp_model_define import BaseResponse
 from core.exceptions import ValidationException, BaseBusinessException
 from .schemas import (RetrievalUploadRequest, RetrievalUploadResponse, 
                       KnowledgeBaseBuildRequest, KnowledgeBaseBuildResponse, BuildTaskStatusResponse,
-                      RetrievalQueryRequest
+                      RetrievalQueryRequest, KnowledgeBaseQueryResponse
 )
 
 # 创建retrieval服务路由
@@ -246,10 +246,11 @@ async def query_knowledge_base(
                 trace_id=trace_id
             )
         
-        # 调用知识库构建业务逻辑处理
+        # 调用知识库查询业务逻辑处理
         result = await handlers.query_knowledge_base(
-            kb_name_with_version = query_request.kb_name_with_version,
-            query_text = query_request.query_text,
+            knowledge_base_name=query_request.knowledge_base_name,
+            kb_version=query_request.kb_version,
+            query_text=query_request.query_text,
             trace_id=trace_id
         )
         
@@ -270,3 +271,62 @@ async def query_knowledge_base(
     except Exception as e:
         logger.error(f"Unexpected error - TraceID: {trace_id}: {str(e)}")
         return BaseResponse.error(code=500, msg="服务内部错误", trace_id=trace_id)
+
+
+@retrieval_router.get("/knowledge-base/{knowledge_base_name}", 
+                     response_model=BaseResponse, 
+                     summary=["查询知识库版本信息"])
+async def get_knowledge_base_info(
+    request: Request,
+    knowledge_base_name: str
+):
+    """
+    查询知识库各版本详细信息
+    
+    - **knowledge_base_name**: 知识库名称
+    """
+    trace_id = getattr(request.state, "trace_id", str(uuid.uuid4()))
+    logger.info(f"Received get knowledge base info request - TraceID: {trace_id}, KB: {knowledge_base_name}")
+    
+    try:
+        # 验证参数
+        if not knowledge_base_name or not knowledge_base_name.strip():
+            return BaseResponse.error(
+                code=400,
+                msg="知识库名称不能为空",
+                trace_id=trace_id
+            )
+        
+        # 获取服务实例
+        service_registry = getattr(request.app.state, "service_registry", None)
+        service = service_registry.get_service("retrieval") if service_registry else None
+        handlers = service.handlers if service else None
+        
+        if not handlers:
+            return BaseResponse.error(
+                code=500,
+                msg="Retrieval服务未初始化",
+                trace_id=trace_id
+            )
+        
+        # 调用业务逻辑处理
+        result = await handlers.get_knowledge_base_info(
+            knowledge_base_name=knowledge_base_name.strip(),
+            trace_id=trace_id
+        )
+        
+        return BaseResponse.success(
+            data=result.dict(),
+            trace_id=trace_id
+        )
+        
+    except ValidationException as e:
+        logger.error(f"Validation error - TraceID: {trace_id}: {str(e)}")
+        return BaseResponse.error(code=400, msg=str(e), trace_id=trace_id)
+    except BaseBusinessException as e:
+        logger.error(f"Business error - TraceID: {trace_id}: {str(e)}")
+        return BaseResponse.error(code=e.code, msg=e.message, trace_id=trace_id)
+    except Exception as e:
+        logger.error(f"Unexpected error - TraceID: {trace_id}: {str(e)}")
+        return BaseResponse.error(code=500, msg="查询知识库信息失败", trace_id=trace_id)
+

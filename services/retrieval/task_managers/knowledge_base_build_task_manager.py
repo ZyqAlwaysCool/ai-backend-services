@@ -86,21 +86,32 @@ class KnowledgeBaseBuildTaskManager(BaseTaskManager):
         if self.embedder is None:
             logger.info(f"Loading embedding model - Model: {self.model_absolute_path}, Device: {self.embedding_device}")
             
-            # 使用asyncio.to_thread在线程池中执行模型加载
-            await asyncio.to_thread(self._sync_load_embedding_model)
-            logger.info("Embedding model loaded and warmed up")
+            try:
+                # 使用asyncio.to_thread在线程池中执行模型加载
+                await asyncio.to_thread(self._sync_load_embedding_model)
+                logger.info("Embedding model loaded and warmed up")
+            except Exception as e:
+                logger.error(f"Failed to load embedding model asynchronously: {str(e)}")
+                self.embedder = None
+                raise
     
     def _sync_load_embedding_model(self):
         """同步版本的模型加载方法"""
-        self.embedder = SentenceTransformersDocumentEmbedder(
-            model=self.model_absolute_path,
-            device=ComponentDevice.from_str(self.embedding_device),
-            batch_size=self.embedding_batch_size
-        )
-        
-        # 预热模型以提高首次运行性能
-        logger.info("Warming up embedding model...")
-        self.embedder.warm_up()
+        try:
+            self.embedder = SentenceTransformersDocumentEmbedder(
+                model=self.model_absolute_path,
+                device=ComponentDevice.from_str(self.embedding_device),
+                batch_size=self.embedding_batch_size
+            )
+            
+            # 预热模型以提高首次运行性能
+            logger.info("Warming up embedding model...")
+            self.embedder.warm_up()
+            logger.info("Embedding model loaded and warmed up successfully")
+        except Exception as e:
+            logger.error(f"Failed to load embedding model: {str(e)}")
+            self.embedder = None
+            raise
     
     async def _unload_embedding_model(self):
         """
@@ -178,6 +189,13 @@ class KnowledgeBaseBuildTaskManager(BaseTaskManager):
             # 4. 获取知识库中所有文档（简化逻辑，不再检查状态）
             all_documents = self._get_knowledge_base_documents(knowledge_base_name, trace_id)
             
+            # 5. 创建知识库版本（在提交任务前）
+            kb_version = self.knowledge_manager.create_knowledge_base_version(
+                knowledge_base_name=knowledge_base_name,
+                clean_settings=clean_settings,
+                settings_hash=settings_hash
+            )
+            
             if not all_documents:
                 logger.info(f"No documents in knowledge base - TraceID: {trace_id}")
                 # 知识库中没有文档，返回空任务
@@ -185,23 +203,24 @@ class KnowledgeBaseBuildTaskManager(BaseTaskManager):
                 return KnowledgeBaseBuildResponse(
                     build_task_id=task_id,
                     knowledge_base_name=knowledge_base_name,
-                    total_pending_files=0,
                     settings_hash=settings_hash,
+                    kb_version=kb_version,  # 使用新版本号
                     total_files=0,
                     created_at=datetime.now().isoformat()
                 )
             
-            # 5. 统一构建任务参数
+            # 6. 统一构建任务参数
             task_params = {
                 'knowledge_base_name': knowledge_base_name,
                 'clean_settings': clean_settings.model_dump(),
                 'settings_hash': settings_hash,
+                'kb_version': kb_version,  # 添加版本号参数
                 'documents': all_documents,
                 'total_files': len(all_documents),
                 'trace_id': trace_id
             }
             
-            # 6. 提交任务到队列
+            # 7. 提交任务到队列
             task_id = await self.submit_task(
                 self._process_document_clean,
                 task_params
@@ -210,9 +229,8 @@ class KnowledgeBaseBuildTaskManager(BaseTaskManager):
             return KnowledgeBaseBuildResponse(
                 build_task_id=task_id,
                 knowledge_base_name=knowledge_base_name,
-                total_pending_files=len(all_documents),
                 settings_hash=settings_hash,
-                kb_version=settings_hash[:8],
+                kb_version=kb_version,  # 使用新版本号格式
                 total_files=len(all_documents),
                 created_at=datetime.now().isoformat()
             )
@@ -255,7 +273,8 @@ class KnowledgeBaseBuildTaskManager(BaseTaskManager):
                 'total_files': total_files,
                 'clean_settings': kwargs.get('clean_settings'),
                 'settings_hash': settings_hash,
-                'version_info': f"kb_{knowledge_base_name}_{settings_hash[:8]}" if settings_hash else f"kb_{knowledge_base_name}_default"
+                'kb_version': kwargs.get('kb_version', ''),
+                'version_info': f"kb_{knowledge_base_name}_{kwargs.get('kb_version', 'default').replace('-', '_')}"
             },
             trace_id=kwargs.get('trace_id')
         )
@@ -329,6 +348,7 @@ class KnowledgeBaseBuildTaskManager(BaseTaskManager):
         settings_hash: str,
         documents: List[Dict],
         total_files: int,
+        kb_version: str = None,  # 新增版本号参数
         trace_id: str = None,
         task_id: str = None
     ) -> Dict[str, Any]:
@@ -380,7 +400,7 @@ class KnowledgeBaseBuildTaskManager(BaseTaskManager):
             
             # 保存清洗结果到版本化的Qdrant索引（不再更新文档状态）
             await self._save_versioned_chunks(
-                knowledge_base_name, chunks, settings_hash, failed_docs, trace_id
+                knowledge_base_name, chunks, settings_hash, kb_version, failed_docs, trace_id
             )
             
             # 构建符合CleanTaskStatusResponse格式的结果
@@ -553,6 +573,7 @@ class KnowledgeBaseBuildTaskManager(BaseTaskManager):
                                     knowledge_base_name: str,
                                     chunks: List[Document],
                                     settings_hash: str,
+                                    kb_version: str,
                                     failed_docs: List[Dict],
                                     trace_id: str = None):
         """
@@ -572,8 +593,10 @@ class KnowledgeBaseBuildTaskManager(BaseTaskManager):
                 # 获取应用配置
                 app_config = get_app_config()
                 
-                # 创建版本化的Qdrant索引名称：kb_{知识库名}_{设置hash前8位}
-                versioned_index = f"kb_{knowledge_base_name}_{settings_hash[:8]}"
+                # 创建版本化的Qdrant索引名称：kb_{知识库名}_{版本号}
+                # 将版本号中的'-'替换为'_'以符合Qdrant索引命名规范
+                safe_version = kb_version.replace('-', '_') if kb_version else settings_hash[:8]
+                versioned_index = f"kb_{knowledge_base_name}_{safe_version}"
                 
                 document_store = QdrantDocumentStore(
                     host=app_config.qdrant_host,
@@ -592,6 +615,10 @@ class KnowledgeBaseBuildTaskManager(BaseTaskManager):
                 # 确保embedding模型已加载
                 await self._load_embedding_model()
                 
+                # 检查模型是否成功加载
+                if self.embedder is None:
+                    raise RuntimeError("Failed to load embedding model")
+                
                 try:
                     # 在线程池中执行embedding操作以避免阻塞事件循环
                     embedded_chunks_result = await asyncio.to_thread(
@@ -608,6 +635,7 @@ class KnowledgeBaseBuildTaskManager(BaseTaskManager):
                         "chunk_index": i,
                         "chunk_size": len(chunk.content or ""),
                         "settings_hash": settings_hash,
+                        "kb_version": kb_version,  # 添加版本号
                         "created_at": datetime.now().isoformat(),
                         "knowledge_base_name": knowledge_base_name,
                         "version_index": versioned_index
@@ -616,6 +644,24 @@ class KnowledgeBaseBuildTaskManager(BaseTaskManager):
                 # 步骤3: 批量写入版本化的Qdrant索引（异步执行）
                 await asyncio.to_thread(document_store.write_documents, embedded_chunks)
                 logger.info(f"Saved {len(chunks)} chunks to versioned Qdrant index: {versioned_index} - TraceID: {trace_id}")
+                
+                # 步骤4: 更新版本统计信息
+                if kb_version:
+                    # 计算文档数量（去重）
+                    unique_docs = set()
+                    for chunk in chunks:
+                        doc_id = chunk.meta.get('document_id', chunk.meta.get('file_path', ''))
+                        if doc_id:
+                            unique_docs.add(doc_id)
+                    
+                    # 更新版本统计
+                    self.knowledge_manager.update_knowledge_base_version_stats(
+                        knowledge_base_name=knowledge_base_name,
+                        version=kb_version,
+                        document_count=len(unique_docs),
+                        chunk_count=len(chunks)
+                    )
+                    logger.info(f"Updated version stats - KB: {knowledge_base_name}, Version: {kb_version}, Docs: {len(unique_docs)}, Chunks: {len(chunks)}")
             
             # 不再更新文档状态 - 这是关键简化！
             logger.info(f"Versioned chunks saved successfully - TraceID: {trace_id}")

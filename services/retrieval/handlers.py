@@ -29,7 +29,8 @@ from .task_managers.knowledge_base_build_task_manager import KnowledgeBaseBuildT
 from .schemas import (
     RetrievalUploadResponse, FileUploadResult,
     KnowledgeBaseBuildResponse, DocumentCleanSettings,
-    RetrievalTaskTypePrefix, RetrievalQueryResponse, SearchResult
+    RetrievalTaskTypePrefix, RetrievalQueryResponse, SearchResult,
+    KnowledgeBaseQueryResponse, KnowledgeBaseInfo
 )
 
 
@@ -356,24 +357,141 @@ class RetrievalHandlers:
         )
         
         return document_store
-
     
+    def _get_qdrant_index_name(self, knowledge_base_name: str, version: str) -> str:
+        """
+        根据知识库名称和版本号生成Qdrant索引名
+        
+        Args:
+            knowledge_base_name: 知识库名称
+            version: 版本号
+            
+        Returns:
+            Qdrant索引名
+        """
+        # 将版本号中的'-'替换为'_'以符合Qdrant索引命名规范
+        safe_version = version.replace('-', '_')
+        return f"kb_{knowledge_base_name}_{safe_version}"
+    
+    async def _get_qdrant_chunk_count(self, qdrant_index: str, trace_id: str = None) -> int:
+        """
+        获取Qdrant索引中的文档块数量
+        
+        Args:
+            qdrant_index: Qdrant索引名
+            trace_id: 链路追踪ID
+            
+        Returns:
+            文档块数量
+        """
+        try:
+            document_store = self._get_knowledge_base(qdrant_index, trace_id)
+            count = document_store.count_documents()
+            logger.debug(f"Qdrant index chunk count - Index: {qdrant_index}, Count: {count}")
+            return count
+        except Exception as e:
+            logger.warning(f"Failed to get Qdrant chunk count - Index: {qdrant_index}: {str(e)}")
+            return 0
+    
+    async def get_knowledge_base_info(self, knowledge_base_name: str, 
+                                     trace_id: str = None) -> KnowledgeBaseQueryResponse:
+        """
+        获取知识库版本详情信息
+        
+        Args:
+            knowledge_base_name: 知识库名称
+            trace_id: 链路追踪ID
+            
+        Returns:
+            知识库版本详情响应
+        """
+        logger.info(f"Get knowledge base info - TraceID: {trace_id}, KB: {knowledge_base_name}")
+        
+        try:
+            # 获取知识库所有版本信息
+            versions = self.knowledge_manager.get_knowledge_base_versions(knowledge_base_name)
+            
+            if not versions:
+                logger.info(f"No versions found for knowledge base: {knowledge_base_name}")
+                return KnowledgeBaseQueryResponse(
+                    knowledge_base_name=knowledge_base_name,
+                    knowledge_base_details=[]
+                )
+            
+            knowledge_base_details = []
+            
+            # 为每个版本组装详情信息
+            for version_record in versions:
+                try:
+                    version = version_record['version']
+                    
+                    # 获取Qdrant实际chunk数量
+                    qdrant_index = self._get_qdrant_index_name(knowledge_base_name, version)
+                    chunk_count = await self._get_qdrant_chunk_count(qdrant_index, trace_id)
+                    
+                    # 解析版本信息
+                    version_info = self.knowledge_manager.parse_version_info(version)
+                    
+                    # 组装KnowledgeBaseInfo
+                    kb_info = KnowledgeBaseInfo(
+                        knowledge_base_name=knowledge_base_name,
+                        kb_version=version,
+                        document_count=version_record.get('document_count', 0),
+                        chunk_count=chunk_count,  # 使用Qdrant实际数量
+                        chunk_method=version_record.get('chunk_method', ''),
+                        chunk_settings=version_record.get('chunk_settings', {}),
+                        created_at=version_record['created_at'].isoformat() if version_record.get('created_at') else '',
+                        metadata={
+                            "is_latest": version_record.get('is_latest', False),
+                            "settings_hash": version_record.get('settings_hash', ''),
+                            "version_info": version_info,
+                            "qdrant_index": qdrant_index
+                        }
+                    )
+                    
+                    knowledge_base_details.append(kb_info)
+                    
+                except Exception as e:
+                    logger.error(f"Failed to process version {version_record.get('version', 'unknown')}: {str(e)}")
+                    continue
+            
+            logger.info(f"Retrieved {len(knowledge_base_details)} versions for KB: {knowledge_base_name}")
+            
+            return KnowledgeBaseQueryResponse(
+                knowledge_base_name=knowledge_base_name,
+                knowledge_base_details=knowledge_base_details
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to get knowledge base info - KB: {knowledge_base_name}, TraceID: {trace_id}: {str(e)}")
+            # 返回空结果而不是抛出异常
+            return KnowledgeBaseQueryResponse(
+                knowledge_base_name=knowledge_base_name,
+                knowledge_base_details=[]
+            )
+
     async def query_knowledge_base(self,
-                                   kb_name_with_version: str,
+                                   knowledge_base_name: str,
+                                   kb_version: str,
                                    query_text: str,
                                    trace_id: str = None) -> RetrievalQueryResponse:
         """
         查询知识库
         
         Args:
-            kb_name_with_version: 知识库名称(带版本号)
+            knowledge_base_name: 知识库名称
+            kb_version: 知识库版本
             query_text: 查询内容
             trace_id: 请求追踪ID
             
         Returns:
             查询结果
         """
-        logger.info(f"Query knowledge base - TraceID: {trace_id}, KB_with_version: {kb_name_with_version}, Query: {query_text}")
+        logger.info(f"Query knowledge base - TraceID: {trace_id}, KB: {knowledge_base_name}, Version: {kb_version}, Query: {query_text}")
+        
+        # 根据知识库名称和版本号生成实际的索引名
+        qdrant_index = self._get_qdrant_index_name(knowledge_base_name, kb_version)
+        logger.info(f"Using Qdrant index: {qdrant_index}")
         
         app_config = get_app_config()
         
@@ -384,19 +502,24 @@ class RetrievalHandlers:
         text_embedder.warm_up()
         query_with_embeddings = text_embedder.run(query_text)["embedding"]
         
-        document_store = self._get_knowledge_base(kb_name_with_version, trace_id)
+        document_store = self._get_knowledge_base(qdrant_index, trace_id)
 
         if document_store is None:
-            raise ValueError(f"No document store named={kb_name_with_version} found")
+            raise ValueError(f"No document store found for KB: {knowledge_base_name}, Version: {kb_version}")
         
         retriever = QdrantEmbeddingRetriever(document_store=document_store)
         print("docs=", document_store.count_documents())
         retrieval_docs = retriever.run(query_embedding=query_with_embeddings)["documents"]
         
         # 封装检索结果
-        resp = RetrievalQueryResponse(kb_name_with_version=kb_name_with_version, query_text=query_text, results=[])
+        resp = RetrievalQueryResponse(
+            knowledge_base_name=knowledge_base_name, 
+            kb_version=kb_version, 
+            query_text=query_text, 
+            results=[]
+        )
         if len(retrieval_docs) < 1:
-            logger.warning(f"No results found for query={query_text} in knowledge base={kb_name_with_version}")
+            logger.warning(f"No results found for query={query_text} in KB: {knowledge_base_name}, Version: {kb_version}")
             return resp
 
         for doc in retrieval_docs:
