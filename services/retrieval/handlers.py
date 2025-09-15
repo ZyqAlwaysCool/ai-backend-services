@@ -11,9 +11,12 @@ from datetime import datetime
 from fastapi import UploadFile
 from loguru import logger
 from bson import ObjectId
+from pathlib import Path
 from haystack import Document
 from haystack.components.converters.docx import DOCXToDocument
 from haystack_integrations.document_stores.qdrant import QdrantDocumentStore
+from haystack.components.embedders import SentenceTransformersTextEmbedder
+from haystack_integrations.components.retrievers.qdrant import QdrantEmbeddingRetriever
 
 from core.storage.mongo_storage import MongoStorage
 from core.config.config_center import get_app_config
@@ -25,8 +28,8 @@ from .managers.knowledge_manager import KnowledgeBaseManager
 from .task_managers.knowledge_base_build_task_manager import KnowledgeBaseBuildTaskManager
 from .schemas import (
     RetrievalUploadResponse, FileUploadResult,
-    KnowledgeBaseBuildRequest, KnowledgeBaseBuildResponse, BuildTaskStatusResponse, DocumentCleanSettings,
-    FailedFileDetail, RetrievalTaskTypePrefix
+    KnowledgeBaseBuildResponse, DocumentCleanSettings,
+    RetrievalTaskTypePrefix, RetrievalQueryResponse, SearchResult
 )
 
 
@@ -336,3 +339,90 @@ class RetrievalHandlers:
             clean_settings=clean_settings,
             trace_id=trace_id
         )
+        
+    def _get_knowledge_base(self, kb_name_with_version: str, trace_id: str = None):
+        logger.info(f"Get knowledge base - TraceID: {trace_id}, KB_with_version: {kb_name_with_version}")
+        app_config = get_app_config()
+        document_store = None
+        
+        document_store = QdrantDocumentStore(
+            host=app_config.qdrant_host,
+            port=app_config.qdrant_port,
+            index=kb_name_with_version,  # 使用版本化索引
+            embedding_dim=app_config.embedding_dim,
+            return_embedding=True,
+            wait_result_from_api=True,
+            timeout=app_config.qdrant_timeout
+        )
+        
+        return document_store
+
+    
+    async def query_knowledge_base(self,
+                                   kb_name_with_version: str,
+                                   query_text: str,
+                                   trace_id: str = None) -> RetrievalQueryResponse:
+        """
+        查询知识库
+        
+        Args:
+            kb_name_with_version: 知识库名称(带版本号)
+            query_text: 查询内容
+            trace_id: 请求追踪ID
+            
+        Returns:
+            查询结果
+        """
+        logger.info(f"Query knowledge base - TraceID: {trace_id}, KB_with_version: {kb_name_with_version}, Query: {query_text}")
+        
+        app_config = get_app_config()
+        
+        project_root = Path(__file__).parent.parent.parent
+        embedder_model_absolute_path = str(project_root / app_config.embedding_model_path)
+        
+        text_embedder = SentenceTransformersTextEmbedder(model=embedder_model_absolute_path)
+        text_embedder.warm_up()
+        query_with_embeddings = text_embedder.run(query_text)["embedding"]
+        
+        document_store = self._get_knowledge_base(kb_name_with_version, trace_id)
+
+        if document_store is None:
+            raise ValueError(f"No document store named={kb_name_with_version} found")
+        
+        retriever = QdrantEmbeddingRetriever(document_store=document_store)
+        print("docs=", document_store.count_documents())
+        retrieval_docs = retriever.run(query_embedding=query_with_embeddings)["documents"]
+        
+        # 封装检索结果
+        resp = RetrievalQueryResponse(kb_name_with_version=kb_name_with_version, query_text=query_text, results=[])
+        if len(retrieval_docs) < 1:
+            logger.warning(f"No results found for query={query_text} in knowledge base={kb_name_with_version}")
+            return resp
+
+        for doc in retrieval_docs:
+            sr = SearchResult(
+                    chunk_id=doc.id,
+                    content=doc.content,
+                    score=doc.score,
+                    source_document=doc.meta["file_path"],
+                    metadata=doc.meta)
+            resp.results.append(sr)
+        
+        # 删除embedder实例
+        del text_embedder
+        text_embedder = None
+        
+        # 强制清理GPU缓存
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            logger.info("GPU cache cleared and synchronized")
+    
+        return resp
+        
+        
+        
+        
+        
+        

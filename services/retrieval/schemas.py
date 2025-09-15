@@ -93,6 +93,7 @@ class KnowledgeBaseBuildResponse(BaseModel):
     settings_hash: str = Field(..., description="设置哈希值(版本标识)")
     total_files: int = Field(..., description="待处理文件数量")
     created_at: str = Field(..., description="任务创建时间")
+    kb_version: str = Field(..., description="知识库版本")
 
 
 class BuildTaskStatusResponse(BaseModel):
@@ -108,3 +109,19 @@ class BuildTaskStatusResponse(BaseModel):
     completed_at: Optional[str] = Field(None, description="完成时间")
     error_message: Optional[str] = Field(None, description="错误信息")
     failed_files_detail: List[FailedFileDetail] = Field(default=[], description="失败文件详情")
+
+class RetrievalQueryRequest(BaseModel):
+    kb_name_with_version: str = Field(..., description="知识库名称(带版本号)")
+    query_text: str = Field(..., description="检索内容")
+
+class SearchResult(BaseModel):
+    chunk_id: str = Field(..., description="文档块ID")
+    content: str = Field(..., description="文档块内容")
+    score: float = Field(..., description="相似度分数")
+    source_document: str = Field(..., description="来源文档名称")
+    metadata: Dict = Field(default={}, description="扩展元数据")
+
+class RetrievalQueryResponse(BaseModel):
+    kb_name_with_version: str = Field(..., description="知识库名称(带版本号)")
+    query_text: str = Field(..., description="检索内容")
+    results: List[SearchResult] = Field(..., description="检索结果列表")

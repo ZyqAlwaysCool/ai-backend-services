@@ -105,7 +105,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
                     code=COMMON_ERROR_REQUEST_PARSE_ERROR,
                     msg="Chat服务未初始化",
                     trace_id=trace_id
-                ).dict()
+                ).model_dump()
             )
         
         # 获取流式生成器

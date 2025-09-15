@@ -3,7 +3,7 @@ Description: 知识库构建异步任务管理器, 负责文档清洗+向量化�
 Author: zyq
 Date: 2025-09-09 15:29:58
 LastEditors: zyq
-LastEditTime: 2025-09-09 15:50:49
+LastEditTime: 2025-09-15 11:45:31
 '''
 
 import os
@@ -212,6 +212,7 @@ class KnowledgeBaseBuildTaskManager(BaseTaskManager):
                 knowledge_base_name=knowledge_base_name,
                 total_pending_files=len(all_documents),
                 settings_hash=settings_hash,
+                kb_version=settings_hash[:8],
                 total_files=len(all_documents),
                 created_at=datetime.now().isoformat()
             )

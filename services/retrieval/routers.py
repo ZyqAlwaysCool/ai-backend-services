@@ -11,7 +11,10 @@ from loguru import logger
 
 from core.schemas.base_resp_model_define import BaseResponse
 from core.exceptions import ValidationException, BaseBusinessException
-from .schemas import RetrievalUploadRequest, RetrievalUploadResponse, KnowledgeBaseBuildRequest, KnowledgeBaseBuildResponse, BuildTaskStatusResponse
+from .schemas import (RetrievalUploadRequest, RetrievalUploadResponse, 
+                      KnowledgeBaseBuildRequest, KnowledgeBaseBuildResponse, BuildTaskStatusResponse,
+                      RetrievalQueryRequest
+)
 
 # 创建retrieval服务路由
 retrieval_router = APIRouter(tags=["向量检索服务"])
@@ -198,6 +201,55 @@ async def build_knowledge_base(
         result = await handlers.build_knowledge_base(
             knowledge_base_name=build_request.knowledge_base_name.strip(),
             clean_settings=build_request.clean_settings,
+            trace_id=trace_id
+        )
+        
+        return BaseResponse.success(
+            data=result.dict(),
+            trace_id=trace_id
+        )
+        
+    except ValidationException as e:
+        logger.error(f"Validation error - TraceID: {trace_id}: {str(e)}")
+        return BaseResponse.error(code=400, msg=str(e), trace_id=trace_id)
+    except ValueError as e:
+        logger.error(f"Value error - TraceID: {trace_id}: {str(e)}")
+        return BaseResponse.error(code=400, msg=str(e), trace_id=trace_id)
+    except BaseBusinessException as e:
+        logger.error(f"Business error - TraceID: {trace_id}: {str(e)}")
+        return BaseResponse.error(code=e.code, msg=e.message, trace_id=trace_id)
+    except Exception as e:
+        logger.error(f"Unexpected error - TraceID: {trace_id}: {str(e)}")
+        return BaseResponse.error(code=500, msg="服务内部错误", trace_id=trace_id)
+
+@retrieval_router.post("/query", response_model=BaseResponse, summary=["查询知识库"])
+async def query_knowledge_base(
+    request: Request,
+    query_request: RetrievalQueryRequest
+):
+    """
+    查询知识库：根据问题查询知识库
+    """
+    trace_id = getattr(request.state, 'trace_id', str(uuid.uuid4()))
+    logger.info(f"Received build knowledge base request - TraceID: {trace_id}")
+    
+    try:        
+        # 获取服务实例
+        service_registry = getattr(request.app.state, 'service_registry', None)
+        service = service_registry.get_service('retrieval') if service_registry else None
+        handlers = service.handlers if service else None
+        
+        if not handlers:
+            return BaseResponse.error(
+                code=500,
+                msg="Retrieval服务未初始化",
+                trace_id=trace_id
+            )
+        
+        # 调用知识库构建业务逻辑处理
+        result = await handlers.query_knowledge_base(
+            kb_name_with_version = query_request.kb_name_with_version,
+            query_text = query_request.query_text,
             trace_id=trace_id
         )
         
