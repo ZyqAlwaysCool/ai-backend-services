@@ -1,4 +1,4 @@
-# AI Backend Services
+# AI能力服务平台
 
 一个基于 FastAPI 的统一 AI 服务平台，集成了对话、文档处理、向量检索等多种 AI 能力。
 
