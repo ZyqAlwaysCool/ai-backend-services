@@ -3,7 +3,7 @@ Description: 对话类服务业务逻辑处理器
 Author: zyq
 Date: 2025-08-26 11:19:24
 LastEditors: zyq
-LastEditTime: 2025-09-18 16:05:33
+LastEditTime: 2025-09-19 14:55:34
 '''
 from typing import Dict, Any, AsyncGenerator, List
 from loguru import logger
@@ -59,6 +59,7 @@ class ChatHandlers:
                     
                 except Exception as e:
                     logger.error(f"Failed to initialize adapter model={model_name} error={str(e)}")
+                    continue
     
     
     def _validate_model(self, model: str):

@@ -163,7 +163,7 @@ class FileInputMiddleware(BaseHTTPMiddleware):
                 })
             elif "/table-extract" in request.url.path:
                 processed_body.update({
-                    "output_format": body.get("output_format", "html_text")
+                    "output_format": form.get("output_format", "html_text")
                 })
             
             logger.info(f"Processed multipart file - TraceID: {trace_id} | Filename: {filename} | Size: {file_size}")

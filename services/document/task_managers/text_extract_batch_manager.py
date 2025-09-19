@@ -117,10 +117,22 @@ class TextExtractBatchTaskManager(BaseTaskManager):
             
             # 构建符合响应格式的状态信息
             status_value = task.status.value.lower() if hasattr(task.status, 'value') else str(task.status).lower()
+            
+            # 将子任务结果转换为 FileExtractTask 格式
+            results = None
+            if hasattr(task, 'sub_results') and task.sub_results:
+                results = []
+                for sub_result in task.sub_results:
+                    # sub_result.result 包含 FileExtractTask 的 model_dump() 数据
+                    if sub_result.result:
+                        file_extract_task = FileExtractTask(**sub_result.result)
+                        results.append(file_extract_task)
+            
             task_status = {
                 'text_extract_batch_task_id': batch_task_id,
                 'status': status_value,
-                'total_files': getattr(task, 'processed_items', 0),
+                'results': results,
+                'total_files': getattr(task, 'total_items', 0),
                 'completed_files': getattr(task, 'processed_items', 0),
                 'successful_files': getattr(task, 'successful_items', 0),
                 'failed_files': getattr(task, 'failed_items', 0),
@@ -172,6 +184,17 @@ class TextExtractBatchTaskManager(BaseTaskManager):
                     results.append(result)
                     completed_count += 1
                     
+                    # 将结果存储为子任务结果
+                    if task_id:
+                        sub_task_status = TaskStatus.COMPLETED if result.status == FileExtractStatus.SUCCESS else TaskStatus.FAILED
+                        await self.storage_backend.add_sub_task_result(
+                            task_id=task_id,
+                            sub_task_id=result.extract_task_id,
+                            status=sub_task_status,
+                            result=result.model_dump(),
+                            error_message=None if result.status == FileExtractStatus.SUCCESS else "文件处理失败"
+                        )
+                    
                     # 更新进度
                     if task_id:
                         await self.storage_backend.update_task_progress(
@@ -182,17 +205,27 @@ class TextExtractBatchTaskManager(BaseTaskManager):
                         )
                     
                 except Exception as e:
-                    logger.error(f"文件处理失败 - File: {file_item['filename']} | Error: {str(e)}")
+                    logger.error(f"文件处理失败 - File: {file_item.filename} | Error: {str(e)}")
                     # 添加失败结果
                     error_result = FileExtractTask(
-                        extract_task_id=f"{task_id}_{file_item['filename']}",
-                        filename=file_item['filename'],
+                        extract_task_id=f"{task_id}_{file_item.filename}",
+                        filename=file_item.filename,
                         status=FileExtractStatus.FAILED,
                         text_content="",
                         word_count=0
                     )
                     results.append(error_result)
                     completed_count += 1
+                    
+                    # 将失败结果存储为子任务结果
+                    if task_id:
+                        await self.storage_backend.add_sub_task_result(
+                            task_id=task_id,
+                            sub_task_id=error_result.extract_task_id,
+                            status=TaskStatus.FAILED,
+                            result=error_result.model_dump(),
+                            error_message=str(e)
+                        )
                     
                     # 更新进度
                     if task_id:
@@ -245,10 +278,10 @@ class TextExtractBatchTaskManager(BaseTaskManager):
                 )
             raise e
     
-    async def _process_single_file(self, file_item: Dict[str, Any], extract_options: Dict[str, Any], trace_id: str) -> FileExtractTask:
+    async def _process_single_file(self, file_item: Any, extract_options: Dict[str, Any], trace_id: str) -> FileExtractTask:
         """处理单个文件的文本提取"""
-        filename = file_item['filename']
-        file_data = file_item['file_data']
+        filename = file_item.filename
+        file_data = file_item.file_data
         
         try:
             # 解码base64文件数据

@@ -3,7 +3,7 @@ Description: 文档服务API路由定义
 Author: zyq
 Date: 2025-09-18 15:43:43
 LastEditors: zyq
-LastEditTime: 2025-09-19 11:03:38
+LastEditTime: 2025-09-19 15:28:16
 '''
 import uuid
 from typing import Union
@@ -158,6 +158,9 @@ async def query_convert_task(convert_task_id: str, http_request: Request):
             message=get_service_error_message(DOCUMENT_SERVICE_INIT_ERROR)
         )
     
+    if not convert_task_id.startswith(DocumentTaskTypePrefix.DOCUMENT_CONVERT_TASK.value):
+        raise ValidationException(get_service_error_message(DOCUMENT_SERVICE_INVALID_TASK_TYPE_ERROR))
+    
     # 调用业务逻辑
     response = await handlers.query_convert_task(convert_task_id, trace_id)
     
@@ -283,7 +286,7 @@ async def query_pdf_parser_task(pdf_parser_batch_task_id: str, http_request: Req
             message=get_service_error_message(DOCUMENT_SERVICE_INIT_ERROR)
         )
     
-    if not pdf_parser_batch_task_id.startswith(DocumentTaskTypePrefix.PDF_BATCH_PARSE_TASK):
+    if not pdf_parser_batch_task_id.startswith(DocumentTaskTypePrefix.PDF_BATCH_PARSE_TASK.value):
         raise ValidationException(get_service_error_message(DOCUMENT_SERVICE_INVALID_TASK_TYPE_ERROR))
     
     # 调用业务逻辑
