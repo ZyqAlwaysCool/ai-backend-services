@@ -1,13 +1,16 @@
 '''
-Description: OpenAI协议适配器（兼容所有OpenAI协议的模型）
+Description: OpenAI协议适配器(兼容所有OpenAI协议的模型)
 Author: zyq
-Date: 2025-01-21
+Date: 2025-09-03 18:30:51
+LastEditors: zyq
+LastEditTime: 2025-09-18 15:04:22
 '''
 from typing import Dict, Any, AsyncGenerator, List
 from loguru import logger
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain.callbacks import get_openai_callback
 
 from core.config.error_codes import COMMON_ERROR_REQUEST_PARSE_ERROR
 from core.exceptions import BaseBusinessException
@@ -16,7 +19,7 @@ from .base import LLMProtocolAdapter
 
 
 class OpenAIProtocolAdapter(LLMProtocolAdapter):
-    """OpenAI协议适配器（兼容qwen、deepseek、llama等所有OpenAI协议的模型）"""
+    """OpenAI协议适配器(兼容qwen、deepseek、llama等所有OpenAI协议的模型)"""
     
     def __init__(self, model_config: Dict[str, Any], timeout: int = 30):
         super().__init__(model_config)
@@ -77,19 +80,18 @@ class OpenAIProtocolAdapter(LLMProtocolAdapter):
             llm_client.max_tokens = max_tokens
             
             lc_messages = self._convert_messages_to_langchain(messages)
-            response = await llm_client.ainvoke(lc_messages)
             
-            # 估算token使用量（实际项目中可通过callback获取精确值）
-            estimated_prompt_tokens = sum(len(msg.get('content', '')) for msg in messages) // 4
-            estimated_completion_tokens = len(response.content) // 4
+            # 使用callback统计token
+            with get_openai_callback() as cb:
+                response = await llm_client.ainvoke(lc_messages)
             
             return ChatResponse(
                 answer=response.content,
                 model=self.model_name,
                 usage={
-                    'prompt_tokens': estimated_prompt_tokens,
-                    'completion_tokens': estimated_completion_tokens,
-                    'total_tokens': estimated_prompt_tokens + estimated_completion_tokens
+                    'prompt_tokens': cb.prompt_tokens,
+                    'completion_tokens': cb.completion_tokens,
+                    'total_tokens': cb.total_tokens
                 },
                 finish_reason='stop'
             )

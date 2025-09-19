@@ -6,8 +6,7 @@ Date: 2025-01-21
 import os
 from pathlib import Path
 
-# 🔧 关键修复：必须在导入任何其他模块之前设置HanLP环境变量
-# 因为HanLP库在第一次导入时就会确定模型缓存路径
+# 必须在导入任何其他模块之前设置HanLP环境变量, HanLP库在第一次导入时就会确定模型缓存路径
 project_root = Path(__file__).parent
 hanlp_cache_dir = project_root / 'models' / 'hanlp_models'
 hanlp_cache_dir.mkdir(exist_ok=True)
@@ -17,7 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.logging import setup_logger
-from core.config import validate_config_on_startup, get_app_config, load_app_config
+from core.config import validate_config_on_startup, get_app_config, load_app_config, get_services_config
 from core.exceptions import global_exception_handler, business_exception_handler, BaseBusinessException
 from core.middleware import RequestTraceMiddleware, RequestLoggingMiddleware, AuthMiddleware
 from core.middleware.file_input import FileInputMiddleware
@@ -64,7 +63,7 @@ async def lifespan(app: FastAPI):
         logger.info("Auth service initialized")
         
     except Exception as e:
-        logger.error(f"Auth service initialization failed error={str(e)}")
+        logger.error(f"Auth service initialization failed. error={str(e)}")
         raise SystemExit(1)
     
     # 发现并注册所有启用的服务
@@ -190,7 +189,7 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 # 添加中间件（注意顺序 - 后添加的先执行）
-app.add_middleware(FileInputMiddleware)  # 文件输入处理中间件
+app.add_middleware(FileInputMiddleware, max_file_size=get_services_config().document.max_file_size)  # 文件输入处理中间件
 app.add_middleware(AuthMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RequestTraceMiddleware)
@@ -276,5 +275,6 @@ if __name__ == "__main__":
         "app:app",
         host=host,
         port=port,
-        reload=True,
+        #reload=True,
+        reload=False,
     )

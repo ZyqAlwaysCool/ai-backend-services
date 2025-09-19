@@ -1,15 +1,18 @@
 '''
 Description: Chat服务API路由定义
 Author: zyq
-Date: 2025-01-21
+Date: 2025-09-03 18:29:16
+LastEditors: zyq
+LastEditTime: 2025-09-18 15:57:26
 '''
+
 import uuid
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from core.schemas.base_resp_model_define import BaseResponse
-from core.config.error_codes import COMMON_ERROR_REQUEST_PARSE_ERROR
+from core.config.error_codes import *
 from core.exceptions import ValidationException, BaseBusinessException
 from .schemas import ChatRequest
 from .handlers import ChatHandlers
@@ -38,121 +41,59 @@ async def _stream_wrapper(generator, trace_id: str):
 
 @chat_router.post("/chat", response_model=BaseResponse, summary="非流式对话")
 async def chat(request: ChatRequest, http_request: Request):
-    """对话接口（非流式响应，根据history字段判断单轮/多轮）"""
-    trace_id = str(uuid.uuid4())
+    """对话接口(非流式响应,根据history字段判断单轮/多轮)"""
+    trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
     logger.info(f"Chat request started | TraceID: {trace_id}")
-    conversation_type = "multi-turn" if len(request.history) > 0 else "single-turn"
     
-    try:
-        # 从service_registry获取chat服务的handlers实例
-        service_registry = getattr(http_request.app.state, 'service_registry', None)
-        chat_service = service_registry.get_service('chat') if service_registry else None
-        handlers = chat_service.handlers if chat_service else None
-        if not handlers:
-            return BaseResponse.error(
-                code=COMMON_ERROR_REQUEST_PARSE_ERROR,
-                msg="Chat服务未初始化",
-                trace_id=trace_id
-            )
-        
-        response = await handlers.chat(request, trace_id)
-        
-        logger.info(f"Chat request completed | TraceID: {trace_id}")
-        return BaseResponse.success(
-            data=response.dict(),
-            trace_id=trace_id
-        )
-        
-    except ValidationException as e:
-        logger.warning(f"Validation error error={str(e)} | TraceID: {trace_id}")
-        return BaseResponse.error(
+    # 从service_registry获取chat服务的handlers实例
+    service_registry = getattr(http_request.app.state, 'service_registry', None)
+    chat_service = service_registry.get_service('chat') if service_registry else None
+    handlers = chat_service.handlers if chat_service else None
+    if not handlers:
+        raise BaseBusinessException(
             code=COMMON_ERROR_REQUEST_PARSE_ERROR,
-            msg=str(e),
-            trace_id=trace_id
+            message="Chat服务未初始化"
         )
-    except BaseBusinessException as e:
-        logger.error(f"Business error error={str(e)} | TraceID: {trace_id}")
-        return BaseResponse.error(
-            code=e.code,
-            msg=e.message,
-            trace_id=trace_id
-        )
-    except Exception as e:
-        logger.error(f"Unexpected error error={str(e)} | TraceID: {trace_id}")
-        return BaseResponse.error(
-            code=COMMON_ERROR_REQUEST_PARSE_ERROR,
-            msg=f"服务内部错误: {str(e)}",
-            trace_id=trace_id
-        )
+    
+    response = await handlers.chat(request, trace_id)
+    
+    logger.info(f"Chat request completed | TraceID: {trace_id}")
+    return BaseResponse.success(
+        data=response.dict(),
+        trace_id=trace_id
+    )
 
 
 @chat_router.post("/chat-stream", summary="流式对话")
 async def chat_stream(request: ChatRequest, http_request: Request):
-    """对话接口（流式响应，根据history字段判断单轮/多轮）"""
-    trace_id = str(uuid.uuid4())
+    """对话接口(流式响应,根据history字段判断单轮/多轮)"""
+    trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
     logger.info(f"Chat stream request started | TraceID: {trace_id}")
-    conversation_type = "multi-turn" if len(request.history) > 0 else "single-turn"
     
-    try:
-        # 从service_registry获取chat服务的handlers实例
-        service_registry = getattr(http_request.app.state, 'service_registry', None)
-        chat_service = service_registry.get_service('chat') if service_registry else None
-        handlers = chat_service.handlers if chat_service else None
-        if not handlers:
-            raise HTTPException(
-                status_code=500,
-                detail=BaseResponse.error(
-                    code=COMMON_ERROR_REQUEST_PARSE_ERROR,
-                    msg="Chat服务未初始化",
-                    trace_id=trace_id
-                ).model_dump()
-            )
-        
-        # 获取流式生成器
-        stream_generator = handlers.chat_stream(request, trace_id)
-        
-        logger.info(f"Chat stream request completed | TraceID: {trace_id}")
-        # 返回流式响应 - 原始chunk块
-        return StreamingResponse(
-            _stream_wrapper(stream_generator, trace_id),
-            media_type="text/plain",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Trace-ID": trace_id
-            }
-        )
-        
-    except ValidationException as e:
-        logger.warning(f"Validation error error={str(e)} | TraceID: {trace_id}")
-        raise HTTPException(
-            status_code=400,
-            detail=BaseResponse.error(
-                code=COMMON_ERROR_REQUEST_PARSE_ERROR,
-                msg=str(e),
-                trace_id=trace_id
-            ).dict()
-        )
-    except BaseBusinessException as e:
-        logger.error(f"Business error error={str(e)} | TraceID: {trace_id}")
+    # 从service_registry获取chat服务的handlers实例
+    service_registry = getattr(http_request.app.state, 'service_registry', None)
+    chat_service = service_registry.get_service('chat') if service_registry else None
+    handlers = chat_service.handlers if chat_service else None
+    if not handlers:
         raise HTTPException(
             status_code=500,
-            detail=BaseResponse.error(
-                code=e.code,
-                msg=e.message,
-                trace_id=trace_id
-            ).dict()
+            detail="Chat服务未初始化"
         )
-    except Exception as e:
-        logger.error(f"Unexpected error error={str(e)} | TraceID: {trace_id}")
-        raise HTTPException(
-            status_code=500,
-            detail=BaseResponse.error(
-                code=COMMON_ERROR_REQUEST_PARSE_ERROR,
-                msg=f"服务内部错误: {str(e)}",
-                trace_id=trace_id
-            ).dict()
-        )
+    
+    # 获取流式生成器
+    stream_generator = handlers.chat_stream(request, trace_id)
+    
+    logger.info(f"Chat stream request completed | TraceID: {trace_id}")
+    # 返回流式响应 - 原始chunk块
+    return StreamingResponse(
+        _stream_wrapper(stream_generator, trace_id),
+        media_type="text/plain",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Trace-ID": trace_id
+        }
+    )
 
 
 @chat_router.get("/models", response_model=BaseResponse, summary="获取可用模型")
@@ -161,37 +102,20 @@ async def get_enabled_models(http_request: Request):
     trace_id = str(uuid.uuid4())
     logger.info(f"Get enabled models request started | TraceID: {trace_id}")
     
-    try:
-        # 从service_registry获取chat服务的handlers实例
-        service_registry = getattr(http_request.app.state, 'service_registry', None)
-        chat_service = service_registry.get_service('chat') if service_registry else None
-        handlers = chat_service.handlers if chat_service else None
-        if not handlers:
-            return BaseResponse.error(
-                code=COMMON_ERROR_REQUEST_PARSE_ERROR,
-                msg="Chat服务未初始化",
-                trace_id=trace_id
-            )
-        
-        enabled_models = handlers.get_enabled_models()
-        
-        logger.info(f"Get enabled models request completed | TraceID: {trace_id}")
-        return BaseResponse.success(
-            data={"models": enabled_models},
-            trace_id=trace_id
-        )
-        
-    except BaseBusinessException as e:
-        logger.error(f"Business error error={str(e)} | TraceID: {trace_id}")
-        return BaseResponse.error(
-            code=e.code,
-            msg=e.message,
-            trace_id=trace_id
-        )
-    except Exception as e:
-        logger.error(f"Unexpected error error={str(e)} | TraceID: {trace_id}")
-        return BaseResponse.error(
+    # 从service_registry获取chat服务的handlers实例
+    service_registry = getattr(http_request.app.state, 'service_registry', None)
+    chat_service = service_registry.get_service('chat') if service_registry else None
+    handlers = chat_service.handlers if chat_service else None
+    if not handlers:
+        raise BaseBusinessException(
             code=COMMON_ERROR_REQUEST_PARSE_ERROR,
-            msg=f"服务内部错误: {str(e)}",
-            trace_id=trace_id
+            message="Chat服务未初始化"
         )
+    
+    enabled_models = handlers.get_enabled_models()
+    
+    logger.info(f"Get enabled models request completed | TraceID: {trace_id}")
+    return BaseResponse.success(
+        data={"models": enabled_models},
+        trace_id=trace_id
+    )

@@ -1,0 +1,9 @@
+# arq worker配置
+worker:
+  queue_name: arq:queue
+  max_jobs: 10
+  job_timeout: 3600
+  keep_result: 86400
+  health_check_interval: 3600
+  retry_jobs: true
+  max_tries: 3

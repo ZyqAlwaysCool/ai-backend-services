@@ -1,3 +1,10 @@
+'''
+Description: 文件输入处理中间件
+Author: zyq
+Date: 2025-09-02 17:17:17
+LastEditors: zyq
+LastEditTime: 2025-09-18 11:03:45
+'''
 import base64
 import tempfile
 import json
@@ -14,7 +21,7 @@ from core.schemas.base_resp_model_define import BaseResponse
 class FileInputMiddleware(BaseHTTPMiddleware):
     """文件输入处理中间件"""
     
-    def __init__(self, app, max_file_size: int = 10 * 1024 * 1024):  # 10MB
+    def __init__(self, app, max_file_size: int = 10 * 1024 * 1024):  # 默认10MB
         super().__init__(app)
         self.max_file_size = max_file_size
         # 需要处理文件的具体路径

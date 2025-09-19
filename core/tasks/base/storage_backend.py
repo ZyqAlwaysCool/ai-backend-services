@@ -3,7 +3,7 @@ Description: 存储后端抽象接口: 定义任务状态存储的统一接口, 
 Author: zyq
 Date: 2025-08-28 09:55:01
 LastEditors: zyq
-LastEditTime: 2025-08-28 09:59:13
+LastEditTime: 2025-09-18 16:35:24
 '''
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any
@@ -35,7 +35,7 @@ class StorageBackend(ABC):
             task_id: 任务ID
             
         Returns:
-            任务对象，不存在返回None
+            任务对象,不存在返回None
         """
         pass
     

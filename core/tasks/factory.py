@@ -1,9 +1,10 @@
-"""
-任务管理器工厂类
-
-提供便利的任务管理组件创建和配置方法
-"""
-
+'''
+Description: 任务管理器工厂类
+Author: zyq
+Date: 2025-08-29 15:30:33
+LastEditors: zyq
+LastEditTime: 2025-09-18 16:58:19
+'''
 import os
 from typing import Dict, Any, Optional
 from loguru import logger
@@ -12,50 +13,32 @@ from .backends.arq_backend import ARQTaskBackend
 from .backends.mongo_task_storage import MongoTaskStorage
 from .base.queue_backend import QueueBackend
 from .base.storage_backend import StorageBackend
-from core.config.config_center import get_app_config
+from core.config.config_center import get_app_config, get_worker_config
 
 
 class TaskManagerFactory:
     """任务管理器工厂类"""
-    
-    DEFAULT_ARQ_CONFIG = {
-        'default_queue': 'arq:queue',
-        'job_timeout': 3600,
-        'keep_result': 86400,
-        'redis_host': '127.0.0.1',
-        'redis_port': 6379,
-        'redis_db': 0,
-        'redis_password': None,
-        'max_connections': 10
-    }
-    
-# MongoDB配置已移到统一配置中心，无需默认配置
-    
-    DEFAULT_TASK_CONFIG = {
-        'default_timeout': 3600,
-        'default_max_retries': 3,
-        'default_queue_name': 'arq:queue'
-    }
-    
+
     @classmethod
     def create_arq_backend(cls, config: Optional[Dict[str, Any]] = None) -> ARQTaskBackend:
         """
         创建ARQ队列后端
         
         Args:
-            config: ARQ配置，如果为None则使用统一配置中心配置
+            config: ARQ配置,如果为None则使用统一配置中心配置
             
         Returns:
             ARQ队列后端实例
         """
         # 从统一配置中心获取配置
         app_config = get_app_config()
+        worker_config = get_worker_config()
         
         # 构建ARQ配置
         final_config = {
-            'default_queue': 'arq:queue',
-            'job_timeout': 3600,
-            'keep_result': 86400,
+            'default_queue': worker_config.queue_name,
+            'job_timeout': worker_config.job_timeout,
+            'keep_result': worker_config.keep_result,
             'redis_host': app_config.redis_host,
             'redis_port': app_config.redis_port,
             'redis_db': app_config.redis_db,
@@ -76,7 +59,7 @@ class TaskManagerFactory:
         创建MongoDB存储后端
         
         Args:
-            config: MongoDB配置，如果为None则使用统一配置中心配置
+            config: MongoDB配置, 如果为None则使用统一配置中心配置
             
         Returns:
             MongoDB存储后端实例
@@ -115,38 +98,7 @@ class TaskManagerFactory:
         storage_backend = cls.create_mongo_storage(mongo_config)
         
         return queue_backend, storage_backend
-    
-    @classmethod
-    def get_default_task_config(cls) -> Dict[str, Any]:
-        """
-        获取默认的任务管理配置
-        
-        Returns:
-            默认任务配置字典
-        """
-        return cls.DEFAULT_TASK_CONFIG.copy()
-    
-    @classmethod
-    def create_collection_mapping(
-        cls, 
-        custom_mappings: Optional[Dict[str, str]] = None
-    ) -> Dict[str, str]:
-        """
-        创建collection映射配置
-        
-        Args:
-            custom_mappings: 自定义映射，会合并到默认映射中
-            
-        Returns:
-            完整的collection映射配置
-        """
-        mapping = cls.DEFAULT_MONGO_CONFIG['collection_mapping'].copy()
-        
-        if custom_mappings:
-            mapping.update(custom_mappings)
-        
-        return mapping
-    
+
     @classmethod
     async def health_check_backends(
         cls,

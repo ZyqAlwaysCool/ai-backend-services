@@ -1,9 +1,9 @@
 '''
-Description: MongoDB任务存储后端实现, 基于MongoDB实现的任务状态存储后端, 支持不同任务类型存储到不同collection
+Description: MongoDB任务存储后端实现, 基于MongoDB实现的任务状态存储后端, 不同任务类型存储到不同collection
 Author: zyq
 Date: 2025-08-28 10:15:32
 LastEditors: zyq
-LastEditTime: 2025-08-29 16:24:32
+LastEditTime: 2025-09-19 09:15:09
 '''
 
 from typing import Dict, List, Optional, Any
@@ -165,7 +165,7 @@ class MongoTaskStorage(StorageBackend):
             return False
     
     async def get_task(self, task_id: str) -> Optional[BaseTask]:
-        """获取任务信息 - 使用直接定位优化性能"""
+        """获取任务信息"""
         try:
             # 直接定位到正确的collection查找 - 
             task_type_key = self._extract_task_type_key_from_id(task_id)
@@ -177,11 +177,11 @@ class MongoTaskStorage(StorageBackend):
                 task_dict.pop('_id', None)
                 return self._dict_to_task(task_dict)
             
-            # 如果直接定位失败，fallback到遍历查找（容错机制）
+            # 如果直接定位失败，降级到遍历查找
             logger.warning(f"Task not found in predicted collection {task_type_key}, trying all collections")
             
             current_mapping = self._get_current_collection_mapping()
-            for fallback_type_key, collection_name in current_mapping.items():
+            for fallback_type_key, _ in current_mapping.items():
                 if fallback_type_key == task_type_key:
                     continue  # 跳过已经尝试的
                     
@@ -191,7 +191,7 @@ class MongoTaskStorage(StorageBackend):
                 if records:
                     task_dict = records[0]
                     task_dict.pop('_id', None)
-                    logger.debug(f"Task found via fallback in {fallback_type_key}: {task_id}")
+                    logger.warning(f"Task found via fallback in {fallback_type_key}: {task_id}")
                     return self._dict_to_task(task_dict)
             
             return None
@@ -224,13 +224,13 @@ class MongoTaskStorage(StorageBackend):
                     else:
                         update_data[key] = value
             
-            # 直接定位到正确的collection更新 - 
+            # 定位正确的collection更新
             task_type_key = self._extract_task_type_key_from_id(task_id)
             storage = self.get_storage_instance(task_type_key)
             
             try:
                 storage.update_record({'task_id': task_id}, update_data)
-                logger.debug(f"Task status updated: {task_id} -> {status.value} in {task_type_key}")
+                logger.info(f"Task status updated: {task_id} -> {status.value} in {task_type_key}")
                 return True
             except Exception as e:
                 # 如果直接定位失败，fallback到遍历查找（容错机制）
@@ -273,13 +273,13 @@ class MongoTaskStorage(StorageBackend):
             if failed_items is not None:
                 update_data['failed_items'] = failed_items
             
-            # 直接定位到正确的collection更新 - 
+            # 直接定位到正确的collection更新
             task_type_key = self._extract_task_type_key_from_id(task_id)
             storage = self.get_storage_instance(task_type_key)
             
             try:
                 storage.update_record({'task_id': task_id}, update_data)
-                logger.debug(f"Task progress updated: {task_id} -> {processed_items} in {task_type_key}")
+                logger.warning(f"Task progress updated: {task_id} -> {processed_items} in {task_type_key}")
                 return True
             except Exception as e:
                 # 容错机制：如果直接定位失败，尝试其他collection
@@ -293,7 +293,7 @@ class MongoTaskStorage(StorageBackend):
                     storage = self.get_storage_instance(fallback_type_key)
                     try:
                         storage.update_record({'task_id': task_id}, update_data)
-                        logger.debug(f"Task progress updated via fallback: {task_id} in {fallback_type_key}")
+                        logger.warning(f"Task progress updated via fallback: {task_id} in {fallback_type_key}")
                         return True
                     except Exception:
                         continue
@@ -345,7 +345,7 @@ class MongoTaskStorage(StorageBackend):
                 {'sub_results': sub_results_dict}
             )
             
-            logger.debug(f"Sub task result added: {task_id} -> {sub_task_id}")
+            logger.info(f"Sub task result added: {task_id} -> {sub_task_id}")
             return True
             
         except Exception as e:

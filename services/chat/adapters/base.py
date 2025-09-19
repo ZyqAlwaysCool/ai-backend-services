@@ -1,7 +1,9 @@
 '''
 Description: LLM协议适配器基类和工厂
 Author: zyq
-Date: 2025-01-21
+Date: 2025-08-21 16:54:00
+LastEditors: zyq
+LastEditTime: 2025-09-18 16:30:47
 '''
 from abc import ABC, abstractmethod
 from typing import Dict, Any, AsyncGenerator, List

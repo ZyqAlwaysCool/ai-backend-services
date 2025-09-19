@@ -186,4 +186,5 @@ class DocumentTaskTypePrefix(str, Enum):
     PDF_PARSE_TASK = "pdf-to-docx-task" # pdf转换docx(单任务前缀)
     CONVERT_TASK = "convert-task" # 文档格式转换
     TEXT_EXTRACT_BATCH_TASK = "text-extract-batch-task" # 文本提取批处理(批处理任务前缀)
+    TABLE_EXTRACT_TASK = "table-extract-task" # 表格信息提取
     

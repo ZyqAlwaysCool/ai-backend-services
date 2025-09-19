@@ -1,8 +1,10 @@
-"""
-ARQ队列后端实现
-
-基于ARQ实现的异步任务队列后端，支持原生asyncio
-"""
+'''
+Description: ARQ异步任务队列后端
+Author: zyq
+Date: 2025-08-29 17:34:29
+LastEditors: zyq
+LastEditTime: 2025-09-18 16:46:28
+'''
 
 import os
 import asyncio
@@ -46,11 +48,11 @@ class ARQTaskBackend(QueueBackend):
         self.job_timeout = self.config.get('job_timeout', 3600)
         self.keep_result = self.config.get('keep_result', 86400)  # 保留结果24小时
         
-        # 连接池（延迟初始化）
+        # 连接池
         self.pool: Optional[ArqRedis] = None
         self.redis_client: Optional[redis.Redis] = None
         
-        logger.info(f"ARQ backend configured with Redis: {self.redis_settings.host}:{self.redis_settings.port}")
+        logger.info(f"ARQ backend init with Redis: {self.redis_settings.host}:{self.redis_settings.port}")
     
     async def _ensure_connection(self):
         """确保Redis连接池已初始化"""
@@ -83,11 +85,11 @@ class ARQTaskBackend(QueueBackend):
                 'job_id': task.task_id,  # 使用任务ID作为作业ID
             }
             
-            # ARQ需要事先注册函数，这里我们使用通用的处理函数
+            # ARQ需要事先注册函数,这里使用通用的处理函数
             # 实际的任务函数和参数通过job参数传递
             job = await self.pool.enqueue_job(
                 'process_task',  # 通用处理函数名
-                task.dict(),  # 直接传递task_dict作为第一个位置参数
+                task.model_dump(),  # 直接传递task_dict作为第一个位置参数
                 func.__name__ if hasattr(func, '__name__') else 'anonymous',
                 args,
                 kwargs,
@@ -101,53 +103,6 @@ class ARQTaskBackend(QueueBackend):
             logger.error(f"Failed to enqueue task {task.task_id}: {str(e)}")
             raise
     
-    async def _execute_with_context(
-        self, 
-        task: BaseTask, 
-        func: Callable, 
-        *args, 
-        **kwargs
-    ):
-        """在任务上下文中执行函数"""
-        import time
-        start_time = time.time()
-        
-        try:
-            logger.info(f"Starting async task execution: {task.task_id}")
-            
-            # 执行异步任务函数
-            if asyncio.iscoroutinefunction(func):
-                result = await func(*args, **kwargs)
-            else:
-                result = func(*args, **kwargs)
-            
-            execution_time = time.time() - start_time
-            logger.info(f"Task completed: {task.task_id} in {execution_time:.2f}s")
-            
-            # 构建任务结果
-            task_result = TaskResult(
-                task_id=task.task_id,
-                status=TaskStatus.COMPLETED,
-                result_data=result,
-                execution_time=execution_time
-            )
-            
-            return task_result
-            
-        except Exception as e:
-            execution_time = time.time() - start_time
-            logger.error(f"Task failed: {task.task_id} after {execution_time:.2f}s - {str(e)}")
-            
-            # 构建错误结果
-            task_result = TaskResult(
-                task_id=task.task_id,
-                status=TaskStatus.FAILED,
-                result_data=None,
-                metadata={'error': str(e)},
-                execution_time=execution_time
-            )
-            
-            raise Exception(task_result)  # ARQ会捕获并标记为失败
     
     async def get_task_status(self, queue_task_id: str) -> Dict[str, Any]:
         """获取队列中任务的执行状态"""
@@ -225,7 +180,7 @@ class ARQTaskBackend(QueueBackend):
             if status in ['complete', 'not_found']:
                 return False
             
-            # ARQ没有直接的cancel方法，我们通过删除作业来实现
+            # ARQ没有直接的cancel方法,通过删除作业来实现
             await job.abort()
             logger.info(f"Task cancelled: {queue_task_id}")
             return True
@@ -253,27 +208,47 @@ class ARQTaskBackend(QueueBackend):
         try:
             await self._ensure_connection()
             
-            # 扫描失败的作业
             failed_tasks = []
+            cursor = 0
+            scanned_count = 0
             
-            # ARQ将失败的作业信息存储在Redis中
-            # 这里简化实现，实际可能需要更复杂的查询逻辑
-            pattern = f"{job_key_prefix}*"
-            keys = await self.redis_client.keys(pattern)
+            # 使用SCAN代替KEYS，避免阻塞Redis
+            while len(failed_tasks) < limit and scanned_count < limit * 10:  # 限制扫描次数
+                cursor, keys = await self.redis_client.scan(
+                    cursor=cursor,
+                    match=f"{job_key_prefix}*",
+                    count=100  # 每次扫描100个key
+                )
+                
+                # 批量检查key的状态
+                pipe = self.redis_client.pipeline()
+                for key in keys:
+                    pipe.hget(key, 'status')
+                statuses = await pipe.execute()
+                
+                # 收集失败的任务
+                for key, status in zip(keys, statuses):
+                    if status and status.decode() == 'failed':
+                        try:
+                            job_data = await self.redis_client.hgetall(key)
+                            failed_tasks.append({
+                                'job_id': key.decode().split(':')[-1],
+                                'failed_at': job_data.get(b'enqueue_time', b'').decode(),
+                                'error': job_data.get(b'result', b'').decode()
+                            })
+                            
+                            if len(failed_tasks) >= limit:
+                                break
+                        except Exception:
+                            continue
+                
+                scanned_count += len(keys)
+                
+                # 如果cursor为0，说明扫描完成
+                if cursor == 0:
+                    break
             
-            for key in keys[:limit]:
-                try:
-                    job_data = await self.redis_client.hgetall(key)
-                    if job_data.get('status') == 'failed':
-                        failed_tasks.append({
-                            'job_id': key.decode().split(':')[-1],
-                            'failed_at': job_data.get('enqueue_time'),
-                            'error': job_data.get('result')
-                        })
-                except Exception:
-                    continue
-            
-            return failed_tasks
+            return failed_tasks[:limit]
             
         except Exception as e:
             logger.error(f"Failed to get failed tasks: {str(e)}")
@@ -301,17 +276,42 @@ class ARQTaskBackend(QueueBackend):
             await self._ensure_connection()
             
             count = 0
-            pattern = f"{job_key_prefix}*"
-            keys = await self.redis_client.keys(pattern)
+            cursor = 0
+            batch_size = 100
             
-            for key in keys:
-                try:
-                    job_data = await self.redis_client.hgetall(key)
-                    if job_data.get('status') == 'failed':
-                        await self.redis_client.delete(key)
-                        count += 1
-                except Exception:
+            # 使用SCAN代替KEYS，分批处理
+            while True:
+                cursor, keys = await self.redis_client.scan(
+                    cursor=cursor,
+                    match=f"{job_key_prefix}*",
+                    count=batch_size
+                )
+                
+                if not keys:
+                    if cursor == 0:
+                        break
                     continue
+                
+                # 批量检查状态
+                pipe = self.redis_client.pipeline()
+                for key in keys:
+                    pipe.hget(key, 'status')
+                statuses = await pipe.execute()
+                
+                # 收集需要删除的失败任务key
+                failed_keys = []
+                for key, status in zip(keys, statuses):
+                    if status and status.decode() == 'failed':
+                        failed_keys.append(key)
+                
+                # 批量删除失败的任务
+                if failed_keys:
+                    deleted_count = await self.redis_client.delete(*failed_keys)
+                    count += deleted_count
+                
+                # 如果cursor为0，说明扫描完成
+                if cursor == 0:
+                    break
             
             logger.info(f"Cleared {count} failed tasks")
             return count
@@ -349,43 +349,4 @@ class ARQTaskBackend(QueueBackend):
         
         logger.info("ARQ backend connections closed")
     
-    def get_worker_functions(self) -> Dict[str, Callable]:
-        """
-        获取Worker函数映射（用于启动ARQ Worker）
-        
-        Returns:
-            函数名到函数的映射字典
-        """
-        # 这个方法在实际使用时需要注册所有可能的任务函数
-        # 这里返回一个空字典，具体的函数注册在业务代码中完成
-        return getattr(self.pool, '_registered_functions', {}) if self.pool else {}
     
-    async def start_worker(self, functions: Dict[str, Callable] = None, **kwargs):
-        """
-        启动ARQ Worker（用于部署时）
-        
-        Args:
-            functions: 要处理的函数映射
-            **kwargs: 其他ARQ Worker参数
-        """
-        from arq import Worker
-        
-        await self._ensure_connection()
-        
-        # 合并函数
-        all_functions = functions or {}
-        if hasattr(self.pool, '_registered_functions'):
-            all_functions.update(self.pool._registered_functions)
-        
-        # 创建Worker类
-        class TaskWorker(Worker):
-            redis_settings = self.redis_settings
-            functions = list(all_functions.values())
-            
-            # Worker配置
-            job_timeout = timedelta(seconds=self.job_timeout)
-            keep_result = timedelta(seconds=self.keep_result)
-        
-        logger.info(f"Starting ARQ worker with {len(all_functions)} functions")
-        worker = TaskWorker()
-        await worker.main()

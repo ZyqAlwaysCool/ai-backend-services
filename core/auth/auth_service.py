@@ -1,7 +1,9 @@
 '''
 Description: 认证服务
 Author: zyq
-Date: 2025-01-21
+Date: 2025-08-22 15:14:08
+LastEditors: zyq
+LastEditTime: 2025-09-18 09:11:23
 '''
 import jwt
 from datetime import datetime, timedelta

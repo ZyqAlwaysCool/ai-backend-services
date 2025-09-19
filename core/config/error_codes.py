@@ -1,7 +1,9 @@
 '''
-Description: 错误码定义模块
+Description: 错误码定义
 Author: zyq
-Date: 2025-01-21
+Date: 2025-08-21 15:34:12
+LastEditors: zyq
+LastEditTime: 2025-09-19 10:36:43
 '''
 
 # 通用错误码
@@ -9,6 +11,7 @@ COMMON_ERROR_START = -10000
 COMMON_ERROR_REQUEST_PARSE_ERROR = -10001  # 请求解析错误
 COMMON_ERROR_INVALID_REQUEST_PARAM_ERROR = -10002  # 无效的请求参数
 COMMON_ERROR_JSON_PARSE_ERROR = -10003  # json解析错误
+COMMON_ERROR_SERVICE_INIT_FAILED = -10004  # 服务初始化失败
 COMMON_ERROR_END = -10199
 
 # 文件处理错误码
@@ -29,6 +32,14 @@ DB_ERROR_DELETE_FAILED = -10304  # 数据库删除失败
 DB_ERROR_SYSTEM_ERROR = -10305  # 数据库系统错误
 DB_ERROR_END = -10399
 
+# 鉴权错误码
+AUTH_ERROR_START = -10400
+AUTH_ERROR_AUTH_FAILED = -10401  # 鉴权失败
+AUTH_ERROR_LOGIN_FAILED = -10402  # 登录失败
+AUTH_ERROR_INVALID_TOKEN = -10403  # 无效的token
+AUTH_ERROR_VERIFY_TOKEN_FAILED = -10404 # token验证失败
+AUTH_ERROR_END = -10499
+
 
 def get_error_message(code: int) -> str:
     """根据错误码获取描述信息"""
@@ -40,11 +51,16 @@ def get_error_message(code: int) -> str:
         FILE_ERROR_PREPROCESS_FAILED: "文件预处理错误",
         FILE_ERROR_UPLOAD_TO_DIFY_FAILED: "文件上传Dify错误",
         FILE_ERROR_SAVE_TO_MARKDOWN_FAILED: "文件保存为markdown失败",
-        FILE_ERROR_NOT_EXIST: "文件不存在",
+        FILE_ERROR_NOT_EXIST: "文件不存在/已过期/已删除",
         DB_ERROR_QUERY_FAILED: "数据库查询失败",
         DB_ERROR_INSERT_FAILED: "数据库插入失败",
         DB_ERROR_UPDATE_FAILED: "数据库更新失败",
         DB_ERROR_DELETE_FAILED: "数据库删除失败",
         DB_ERROR_SYSTEM_ERROR: "数据库系统错误",
+        AUTH_ERROR_AUTH_FAILED: "鉴权失败",
+        AUTH_ERROR_LOGIN_FAILED: "登录失败",
+        AUTH_ERROR_INVALID_TOKEN: "无效的token或已过期",
+        AUTH_ERROR_VERIFY_TOKEN_FAILED: "token验证失败",
+        COMMON_ERROR_SERVICE_INIT_FAILED: "服务初始化失败",
     }
     return error_messages.get(code, "未知错误")

@@ -81,7 +81,7 @@ class TextExtractBatchTaskManager(BaseTaskManager):
             # 验证文件格式
             for file_item in request.files:
                 if not file_item.filename.lower().endswith('.docx'):
-                    raise ValueError(f"仅支持DOCX格式文件，不支持: {file_item.filename}")
+                    raise ValueError(f"仅支持DOCX格式文件,不支持: {file_item.filename}")
             
             # 统一构建任务参数
             task_params = {

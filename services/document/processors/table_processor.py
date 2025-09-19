@@ -165,7 +165,7 @@ class TableProcessor(BaseProcessor):
             html_content = await self._extract_excel_to_html(source_path, request, trace_id)
             
             # 生成任务ID和输出文件路径
-            task_id = self.file_manager.generate_task_id("table-extract-task")
+            task_id = self.file_manager.generate_task_id(DocumentTaskTypePrefix.TABLE_EXTRACT_TASK.value)
             output_filename = f"{request.filename.rsplit('.', 1)[0]}.html"
             output_path = self.file_manager.create_file_path(task_id, output_filename)
             

@@ -1,11 +1,10 @@
 '''
 Description: 
-ARQ Worker管理器
-负责在FastAPI应用中启动和管理ARQ Worker
+ARQ Worker管理器, FastAPI应用中启动和管理ARQ Worker
 Author: zyq
 Date: 2025-08-28 10:58:22
 LastEditors: zyq
-LastEditTime: 2025-08-28 11:26:34
+LastEditTime: 2025-09-18 10:25:28
 '''
 import asyncio
 import os
@@ -18,7 +17,7 @@ from loguru import logger
 
 from .backends.arq_backend import ARQTaskBackend
 from .worker import process_task
-from core.config.config_center import get_app_config
+from core.config.config_center import get_app_config, get_worker_config
 
 
 class WorkerManager:
@@ -43,14 +42,15 @@ class WorkerManager:
         )
         
         # Worker配置
+        worker_config = get_worker_config()
         self.worker_config = {
-            'queue_name': self.config.get('queue_name', 'arq:queue'),
-            'max_jobs': self.config.get('max_jobs', 10),
-            'job_timeout': self.config.get('job_timeout', 3600),
-            'keep_result': self.config.get('keep_result', 86400),
-            'health_check_interval': self.config.get('health_check_interval', 3600),
-            'retry_jobs': self.config.get('retry_jobs', True),  # 启用重试任务处理
-            'max_tries': self.config.get('max_tries', 3),       # 最大重试次数
+            'queue_name': worker_config.queue_name,
+            'max_jobs': worker_config.max_jobs,
+            'job_timeout': worker_config.job_timeout,
+            'keep_result': worker_config.keep_result,
+            'health_check_interval': worker_config.health_check_interval,
+            'retry_jobs': worker_config.retry_jobs,  # 启用重试任务处理
+            'max_tries': worker_config.max_tries,    # 最大重试次数
         }
         
         # Worker实例和控制
@@ -74,8 +74,8 @@ class WorkerManager:
             max_jobs=self.worker_config['max_jobs'],
             job_timeout=self.worker_config['job_timeout'],
             keep_result=self.worker_config['keep_result'],
-            retry_jobs=self.worker_config['retry_jobs'],        # 启用重试任务处理
-            max_tries=self.worker_config['max_tries'],          # 最大重试次数
+            retry_jobs=self.worker_config['retry_jobs'], 
+            max_tries=self.worker_config['max_tries'],
             health_check_interval=self.worker_config['health_check_interval'],
             handle_signals=False  # 让FastAPI处理信号，避免Ctrl+C被阻塞
         )

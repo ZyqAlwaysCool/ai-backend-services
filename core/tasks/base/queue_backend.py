@@ -3,7 +3,7 @@ Description: 队列后端抽象接口: 定义任务队列的统一接口, 支持
 Author: zyq
 Date: 2025-08-28 09:54:12
 LastEditors: zyq
-LastEditTime: 2025-08-28 09:57:19
+LastEditTime: 2025-09-18 16:34:23
 '''
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any, Callable
@@ -57,7 +57,7 @@ class QueueBackend(ABC):
             queue_task_id: 队列任务ID
             
         Returns:
-            任务结果，未完成返回None
+            任务结果,未完成返回None
         """
         pass
     

@@ -1,9 +1,10 @@
-"""
-基础处理器类
-
-提供所有文档处理器的基础接口和通用功能。
-"""
-
+'''
+Description: 基础处理器类, 提供所有文档处理器的基础接口
+Author: zyq
+Date: 2025-08-27 15:27:07
+LastEditors: zyq
+LastEditTime: 2025-09-18 18:11:35
+'''
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 from loguru import logger

@@ -30,8 +30,8 @@ class ChatRequest(BaseModel):
     history: List[ChatMessage] = Field(default=[], description="历史对话记录（为空则为单轮对话）")
     model: str = Field("qwen3-32B", description="使用的模型名称")
     system_prompt: Optional[str] = Field(None, description="系统提示词")
-    temperature: Optional[float] = Field(0.7, description="温度参数", ge=0.0, le=2.0)
-    max_tokens: Optional[int] = Field(2000, description="最大生成token数", ge=1, le=8000)
+    temperature: Optional[float] = Field(0.7, description="温度参数")
+    max_tokens: Optional[int] = Field(2000, description="最大生成token数")
 
 
 class ChatResponse(BaseModel):

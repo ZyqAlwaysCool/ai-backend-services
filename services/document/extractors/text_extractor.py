@@ -1,9 +1,10 @@
-"""
-文本提取器
-
-从PDF页面中提取文本内容。
-"""
-
+'''
+Description: 文本提取器
+Author: zyq
+Date: 2025-09-10 15:33:22
+LastEditors: zyq
+LastEditTime: 2025-09-18 18:19:46
+'''
 import asyncio
 from typing import Dict, Any, List
 from loguru import logger

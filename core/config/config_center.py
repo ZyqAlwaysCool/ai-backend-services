@@ -3,7 +3,7 @@ Description: 全局配置中心, 业务无关
 Author: zyq
 Date: 2025-07-29 17:50:05
 LastEditors: zyq
-LastEditTime: 2025-08-28 11:37:38
+LastEditTime: 2025-09-18 10:20:55
 '''
 import yaml
 import os
@@ -125,10 +125,44 @@ class ServicesConfig(BaseModel):
     class Config:
         frozen = True
 
+class WorkerConfig(BaseModel):
+    """arq worker配置"""
+    queue_name: str = Field("arq:queue", description="任务队列名称")
+    max_jobs: int = Field(10, description="最大任务数量")
+    job_timeout: int = Field(3600, description="任务超时时间(秒)")
+    keep_result: int = Field(86400, description="保留结果时间(秒)")
+    health_check_interval: int = Field(3600, description="健康检查间隔(秒)")
+    retry_jobs: bool = Field(True, description="是否启用任务重试")
+    max_tries: int = Field(3, description="最大重试次数")
+
+@lru_cache(maxsize=1)
+def load_worker_config() -> WorkerConfig:
+    """加载worker配置"""
+    cfg_path = Path(__file__).parent.parent.parent / "configs" / "services" / "worker.yml"
+
+    if not cfg_path.exists():
+        raise ConfigValidationError(f"worker配置文件不存在: {cfg_path}")
+    
+    try:
+        with open(cfg_path, encoding='utf-8') as f:
+            raw_config = yaml.safe_load(f)
+        
+        # 提取woker配置
+        worker_data = raw_config.get('worker', {})
+        return WorkerConfig(**worker_data)
+        
+    except Exception as e:
+        raise ConfigValidationError(f"服务配置加载失败: {str(e)}")
+
+@lru_cache(maxsize=1)
+def get_worker_config() -> WorkerConfig:
+    return load_worker_config()
+        
+
 
 @lru_cache(maxsize=1)
 def load_services_config() -> ServicesConfig:
-    """加载服务配置（带缓存）"""
+    """加载服务配置"""
     cfg_path = Path(__file__).parent.parent.parent / "configs" / "services" / "services.yml"
     
     if not cfg_path.exists():
@@ -144,7 +178,6 @@ def load_services_config() -> ServicesConfig:
         # 支持环境变量覆盖关键配置
         if 'retrieval' in services_data:
             retrieval_config = services_data['retrieval']
-            # 支持环境变量覆盖数据库配置
             retrieval_config['retrieval_db_name'] = os.getenv('RETRIEVAL_DB_NAME', 
                                                             retrieval_config.get('retrieval_db_name', 'ai_backend_services_retrieval'))
             retrieval_config['max_file_size'] = int(os.getenv('MAX_FILE_SIZE', 

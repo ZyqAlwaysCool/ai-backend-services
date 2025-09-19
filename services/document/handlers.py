@@ -3,7 +3,7 @@ Description: 文档类服务业务逻辑处理器
 Author: zyq
 Date: 2025-08-27 15:33:18
 LastEditors: zyq
-LastEditTime: 2025-09-01 16:36:45
+LastEditTime: 2025-09-19 10:31:41
 '''
 
 from typing import Dict, Any
@@ -13,6 +13,8 @@ from loguru import logger
 
 from core.schemas.file_models import FileInfo
 from core.tasks import TaskManagerFactory
+from core.exceptions import BaseBusinessException
+from core.config.error_codes import *
 from .schemas import (
     PDFParserRequest, PDFParserResponse,
     PDFParserBatchRequest, PDFParserBatchResponse,
@@ -21,7 +23,7 @@ from .schemas import (
     ConvertTaskStatusResponse, TextExtractRequest, TextExtractResponse,
     TextExtractBatchRequest, TextExtractBatchResponse,
     ExtractTaskStatusResponse,
-    TableExtractRequest, TableExtractResponse
+    TableExtractRequest, TableExtractResponse,
 )
 from .processors import PDFProcessor
 from .processors.text_processor import TextProcessor
@@ -29,6 +31,7 @@ from .processors.table_processor import TableProcessor
 from .task_managers import PDFBatchTaskManager
 from .task_managers.document_convert_task_manager import DocumentConvertTaskManager
 from .task_managers.text_extract_batch_manager import TextExtractBatchTaskManager
+from ..services_err_codes import *
 
 
 class DocumentHandlers:
@@ -85,25 +88,25 @@ class DocumentHandlers:
         logger.info(f"PDF batch request started files={len(request.files)} | TraceID: {trace_id}")
         
         if not self.pdf_batch_manager:
-            raise RuntimeError("PDF batch task manager not initialized")
+            raise BaseBusinessException(code=DOCUMENT_SERVICE_PDF_BATCH_TASK_MANAGER_INIT_ERROR,
+                                        message=get_service_error_message(DOCUMENT_SERVICE_PDF_BATCH_TASK_MANAGER_INIT_ERROR))
         
         try:
             # 提交批处理任务到任务管理器
             return await self.pdf_batch_manager.submit_pdf_batch_task(request, trace_id)
-        except RuntimeError as e:
-            # 捕获任务管理器的运行时错误，包括Worker不可用
-            logger.error(f"PDF batch task submission failed error={str(e)} | TraceID: {trace_id}")
-            raise RuntimeError(f"批量处理服务暂时不可用，请稍后重试。如果问题持续存在，请联系系统管理员。详细错误：{str(e)}")
         except Exception as e:
-            logger.error(f"PDF batch processing unexpected error error={str(e)} | TraceID: {trace_id}")
-            raise RuntimeError(f"处理请求时发生未知错误，请联系系统管理员。")
+            # 捕获任务管理器运行时错误，包括Worker不可用
+            logger.error(f"submit pdf batch task failed. error={str(e)} | TraceID: {trace_id}")
+            raise BaseBusinessException(code=DOCUMENT_SERVICE_SUBMIT_TASK_ERROR,
+                                        message=get_service_error_message(DOCUMENT_SERVICE_SUBMIT_TASK_ERROR))
     
     async def query_pdf_parser_task(self, task_id: str, trace_id: str = None) -> PDFParserTaskStatusResponse:
         """查询PDF批量解析任务状态"""
         logger.info(f"Query PDF parser task task_id={task_id} | TraceID: {trace_id}")
         
         if not self.pdf_batch_manager:
-            raise RuntimeError("PDF batch task manager not initialized")
+            raise BaseBusinessException(code=DOCUMENT_SERVICE_PDF_BATCH_TASK_MANAGER_INIT_ERROR,
+                                        message=get_service_error_message(DOCUMENT_SERVICE_PDF_BATCH_TASK_MANAGER_INIT_ERROR))
         
         # 从任务管理器获取任务状态
         task_status = await self.pdf_batch_manager.get_batch_task_status(task_id)
@@ -145,7 +148,8 @@ class DocumentHandlers:
         
         # 3. 提交异步转换任务
         if not self.convert_task_manager:
-            raise RuntimeError("Document convert task manager not initialized")
+            raise BaseBusinessException(code=DOCUMENT_SERVICE_CONVERT_TASK_MANAGER_INIT_ERROR,
+                                        message=get_service_error_message(DOCUMENT_SERVICE_CONVERT_TASK_MANAGER_INIT_ERROR))
         
         return await self.convert_task_manager.submit_convert_task(request, temp_file_path, file_info, trace_id)
     
@@ -154,7 +158,8 @@ class DocumentHandlers:
         logger.info(f"Query convert task task_id={convert_task_id} | TraceID: {trace_id}")
         
         if not self.convert_task_manager:
-            raise RuntimeError("Document convert task manager not initialized")
+            raise BaseBusinessException(code=DOCUMENT_SERVICE_CONVERT_TASK_MANAGER_INIT_ERROR,
+                                        message=get_service_error_message(DOCUMENT_SERVICE_CONVERT_TASK_MANAGER_INIT_ERROR))
         
         # 从任务管理器获取状态
         task_status = await self.convert_task_manager.get_convert_task_status(convert_task_id)
@@ -204,7 +209,8 @@ class DocumentHandlers:
         logger.info(f"Query extract task batch_task_id={batch_task_id} | TraceID: {trace_id}")
         
         if not self.text_extract_batch_manager:
-            raise RuntimeError("Text extract batch task manager not initialized")
+            raise BaseBusinessException(code=DOCUMENT_SERVICE_TEXT_EXTRACT_TASK_MANAGER_INIT_ERROR,
+                                        message=get_service_error_message(DOCUMENT_SERVICE_TEXT_EXTRACT_TASK_MANAGER_INIT_ERROR))
         
         # 从任务管理器获取任务状态
         task_status = await self.text_extract_batch_manager.get_extract_batch_task_status(batch_task_id)

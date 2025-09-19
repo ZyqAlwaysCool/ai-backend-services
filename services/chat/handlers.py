@@ -3,7 +3,7 @@ Description: 对话类服务业务逻辑处理器
 Author: zyq
 Date: 2025-08-26 11:19:24
 LastEditors: zyq
-LastEditTime: 2025-08-27 15:20:44
+LastEditTime: 2025-09-18 16:05:33
 '''
 from typing import Dict, Any, AsyncGenerator, List
 from loguru import logger
@@ -38,7 +38,7 @@ class ChatHandlers:
     
     async def initialize(self):
         """初始化处理器"""
-        # 预初始化所有配置的模型适配器，但不进行健康检查
+        # 预初始化所有配置的模型适配器
         await self._initialize_adapters()
     
     async def _initialize_adapters(self):
@@ -47,7 +47,7 @@ class ChatHandlers:
             if model_name in self.enabled_models:
                 try:
                     # 根据配置中的provider字段确定协议类型
-                    protocol = self.llm_config.provider  # 'qwen'
+                    protocol = self.llm_config.provider
                     
                     adapter = ProtocolAdapterFactory.create_adapter(
                         protocol=protocol,
@@ -70,8 +70,8 @@ class ChatHandlers:
     
     def _validate_request_params(self, temperature: float = None, max_tokens: int = None):
         """验证请求参数"""
-        if temperature is not None and not (0.0 <= temperature <= 2.0):
-            raise ValidationException("temperature 必须在 0.0 到 2.0 之间")
+        if temperature is not None and not (0.0 <= temperature <= 1.0):
+            raise ValidationException("temperature 必须在 0.0 到 1.0 之间")
         
         if max_tokens is not None and not (1 <= max_tokens <= 8000):
             raise ValidationException("max_tokens 必须在 1 到 8000 之间")
@@ -107,9 +107,9 @@ class ChatHandlers:
         return messages
     
     async def chat(self, request: ChatRequest, trace_id: str = None) -> ChatResponse:
-        """统一对话处理（单轮/多轮由history字段判断）"""
+        """统一对话处理（单轮/多轮由history字段判断)"""
         is_multi_turn = len(request.history) > 0
-        conversation_type = "多轮" if is_multi_turn else "单轮"
+        conversation_type = "multi-turn" if is_multi_turn else "single-turn"
         
         
         try:
@@ -147,7 +147,7 @@ class ChatHandlers:
     async def chat_stream(self, request: ChatRequest, trace_id: str = None) -> AsyncGenerator[StreamChatChunk, None]:
         """统一流式对话处理（单轮/多轮由history字段判断）"""
         is_multi_turn = len(request.history) > 0
-        conversation_type = "多轮" if is_multi_turn else "单轮"
+        conversation_type = "multi-turn" if is_multi_turn else "single-turn"
         
         
         try:

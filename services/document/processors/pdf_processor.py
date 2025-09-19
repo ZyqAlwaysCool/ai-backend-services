@@ -4,7 +4,6 @@ PDF处理器
 专门处理PDF文档的解析、提取和转换功能。
 """
 
-import time
 from typing import Dict, Any
 import pymupdf
 
