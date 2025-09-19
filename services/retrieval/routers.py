@@ -1,7 +1,9 @@
 '''
 Description: Retrieval服务HTTP路由
 Author: zyq
-Date: 2025-09-08
+Date: 2025-09-18 15:50:47
+LastEditors: zyq
+LastEditTime: 2025-09-19 17:17:32
 '''
 
 import uuid
@@ -11,6 +13,11 @@ from loguru import logger
 
 from core.schemas.base_resp_model_define import BaseResponse
 from core.exceptions import ValidationException, BaseBusinessException
+from ..services_err_codes import (
+    RETRIEVAL_SERVICE_INIT_ERROR, 
+    RETRIEVAL_SERVICE_TASK_NOT_FOUND_ERROR,
+    get_service_error_message
+)
 from .schemas import (RetrievalUploadRequest, RetrievalUploadResponse, 
                       KnowledgeBaseBuildRequest, KnowledgeBaseBuildResponse, BuildTaskStatusResponse,
                       RetrievalQueryRequest, KnowledgeBaseQueryResponse
@@ -59,7 +66,10 @@ async def upload_documents(
     handlers = service.handlers if service else None
     
     if not handlers:
-        raise BaseBusinessException(code=500, message="Retrieval服务未初始化")
+        raise BaseBusinessException(
+            code=RETRIEVAL_SERVICE_INIT_ERROR,
+            message=get_service_error_message(RETRIEVAL_SERVICE_INIT_ERROR)
+        )
     
     # 调用业务逻辑处理
     result = await handlers.upload_documents(
@@ -98,7 +108,10 @@ async def get_build_task_status(
     handlers = service.handlers if service else None
     
     if not handlers:
-        raise BaseBusinessException(code=500, message="Retrieval服务未初始化")
+        raise BaseBusinessException(
+            code=RETRIEVAL_SERVICE_INIT_ERROR,
+            message=get_service_error_message(RETRIEVAL_SERVICE_INIT_ERROR)
+        )
     
     # 调用业务逻辑处理（包含任务ID格式校验）
     result = await handlers.get_build_task_status(
@@ -107,7 +120,10 @@ async def get_build_task_status(
     )
     
     if result is None:
-        raise BaseBusinessException(code=404, message="构建任务不存在或任务ID格式错误")
+        raise BaseBusinessException(
+            code=RETRIEVAL_SERVICE_TASK_NOT_FOUND_ERROR,
+            message=get_service_error_message(RETRIEVAL_SERVICE_TASK_NOT_FOUND_ERROR)
+        )
     
     return BaseResponse.success(
         data=result,
@@ -136,7 +152,10 @@ async def build_knowledge_base(
     handlers = service.handlers if service else None
     
     if not handlers:
-        raise BaseBusinessException(code=500, message="Retrieval服务未初始化")
+        raise BaseBusinessException(
+            code=RETRIEVAL_SERVICE_INIT_ERROR,
+            message=get_service_error_message(RETRIEVAL_SERVICE_INIT_ERROR)
+        )
     
     # 调用知识库构建业务逻辑处理
     result = await handlers.build_knowledge_base(
@@ -167,7 +186,10 @@ async def query_knowledge_base(
     handlers = service.handlers if service else None
     
     if not handlers:
-        raise BaseBusinessException(code=500, message="Retrieval服务未初始化")
+        raise BaseBusinessException(
+            code=RETRIEVAL_SERVICE_INIT_ERROR,
+            message=get_service_error_message(RETRIEVAL_SERVICE_INIT_ERROR)
+        )
     
     # 调用知识库查询业务逻辑处理
     result = await handlers.query_knowledge_base(
@@ -208,7 +230,10 @@ async def get_knowledge_base_info(
     handlers = service.handlers if service else None
     
     if not handlers:
-        raise BaseBusinessException(code=500, message="Retrieval服务未初始化")
+        raise BaseBusinessException(
+            code=RETRIEVAL_SERVICE_INIT_ERROR,
+            message=get_service_error_message(RETRIEVAL_SERVICE_INIT_ERROR)
+        )
     
     # 调用业务逻辑处理
     result = await handlers.get_knowledge_base_info(

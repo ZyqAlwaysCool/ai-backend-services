@@ -1,7 +1,9 @@
 '''
 Description: Retrieval服务业务逻辑处理器
 Author: zyq
-Date: 2025-09-08
+Date: 2025-09-15 17:19:58
+LastEditors: zyq
+LastEditTime: 2025-09-19 17:19:03
 '''
 
 import os
@@ -32,6 +34,20 @@ from .schemas import (
     RetrievalTaskTypePrefix, RetrievalQueryResponse, SearchResult,
     KnowledgeBaseQueryResponse, KnowledgeBaseInfo
 )
+
+
+class RetrievalConstants:
+    """Retrieval服务业务常量定义"""
+    # 状态常量
+    STATUS_SUCCESS = "success"
+    STATUS_FAILED = "failed"
+    
+    # 错误消息模板
+    MSG_FILE_COUNT_EXCEEDED = "单次请求最多只能上传{max_files}个文件，当前上传{current_files}个"
+    MSG_FILE_SIZE_EXCEEDED = "文件大小超出限制，最大允许{max_size}MB，当前{current_size}MB"
+    MSG_KB_CREATE_FAILED = "知识库创建失败"
+    MSG_PROCESS_FAILED = "处理失败: {error}"
+    MSG_UNSUPPORTED_FORMAT = "仅支持DOCX格式文件"
 
 
 class RetrievalHandlers:
@@ -118,8 +134,11 @@ class RetrievalHandlers:
                     filename=file.filename,
                     file_size=0,
                     upload_time=datetime.now(),
-                    status="failed",
-                    error_message=f"单次请求最多只能上传{max_files_per_request}个文件，当前上传{len(files)}个"
+                    status=RetrievalConstants.STATUS_FAILED,
+                    error_message=RetrievalConstants.MSG_FILE_COUNT_EXCEEDED.format(
+                        max_files=max_files_per_request,
+                        current_files=len(files)
+                    )
                 ))
             
             return RetrievalUploadResponse(
@@ -143,8 +162,8 @@ class RetrievalHandlers:
                         filename=file.filename,
                         file_size=0,
                         upload_time=datetime.now(),
-                        status="failed",
-                        error_message="知识库创建失败"
+                        status=RetrievalConstants.STATUS_FAILED,
+                        error_message=RetrievalConstants.MSG_KB_CREATE_FAILED
                     ))
                     failed_count += 1
                 
@@ -169,8 +188,11 @@ class RetrievalHandlers:
                         filename=file.filename,
                         file_size=file_size,
                         upload_time=datetime.now(),
-                        status="failed",
-                        error_message=f"文件大小超出限制，最大允许{max_file_size // 1024 // 1024}MB，当前{file_size // 1024 // 1024}MB"
+                        status=RetrievalConstants.STATUS_FAILED,
+                        error_message=RetrievalConstants.MSG_FILE_SIZE_EXCEEDED.format(
+                            max_size=max_file_size // 1024 // 1024,
+                            current_size=file_size // 1024 // 1024
+                        )
                     ))
                     failed_count += 1
                     continue
@@ -181,8 +203,8 @@ class RetrievalHandlers:
                         filename=file.filename,
                         file_size=file_size,
                         upload_time=datetime.now(),
-                        status="failed",
-                        error_message="仅支持DOCX格式文件"
+                        status=RetrievalConstants.STATUS_FAILED,
+                        error_message=RetrievalConstants.MSG_UNSUPPORTED_FORMAT
                     ))
                     failed_count += 1
                     continue
@@ -213,7 +235,7 @@ class RetrievalHandlers:
                     
                     upload_results.append(upload_result)
                     
-                    if result["status"] == "success":
+                    if result["status"] == RetrievalConstants.STATUS_SUCCESS:
                         success_count += 1
                         # 更新知识库统计
                         self.knowledge_manager.update_knowledge_base_stats(
@@ -235,8 +257,8 @@ class RetrievalHandlers:
                     filename=file.filename,
                     file_size=0,
                     upload_time=datetime.now(),
-                    status="failed",
-                    error_message=f"处理失败: {str(e)}"
+                    status=RetrievalConstants.STATUS_FAILED,
+                    error_message=RetrievalConstants.MSG_PROCESS_FAILED.format(error=str(e))
                 ))
                 failed_count += 1
         

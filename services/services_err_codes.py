@@ -24,6 +24,8 @@ DOCUMENT_SERVICE_ERRCODE_END = -2999
 # retrieval服务错误码
 RETRIEVAL_SERVICE_ERRCODE_START = -3000
 RETRIEVAL_SERVICE_INIT_ERROR = -3001
+RETRIEVAL_SERVICE_TASK_NOT_FOUND_ERROR = -3002
+RETRIEVAL_SERVICE_INVALID_TASK_ID_ERROR = -3003
 RETRIEVAL_SERVICE_ERRCODE_END = -3999
 
 def get_service_error_message(code: int) -> str:
@@ -39,5 +41,7 @@ def get_service_error_message(code: int) -> str:
         CHAT_SERVICE_INIT_ERROR: "chat服务初始化失败",
         
         RETRIEVAL_SERVICE_INIT_ERROR: "retrieval服务初始化失败",
+        RETRIEVAL_SERVICE_TASK_NOT_FOUND_ERROR: "构建任务不存在",
+        RETRIEVAL_SERVICE_INVALID_TASK_ID_ERROR: "任务ID格式错误",
     }
     return error_messages.get(code, "未知错误")
