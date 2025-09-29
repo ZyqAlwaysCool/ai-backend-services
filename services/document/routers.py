@@ -242,6 +242,9 @@ async def text_extract_batch(http_request: Request):
             message=get_error_message(FILE_ERROR_PREPROCESS_FAILED)
         )
     
+    # 保存原始files数据（包含temp_file_path信息）
+    original_files = processed_body.get('files', [])
+    
     # 构建请求对象
     request = TextExtractBatchRequest(**processed_body)
     
@@ -256,8 +259,8 @@ async def text_extract_batch(http_request: Request):
             message=get_service_error_message(DOCUMENT_SERVICE_INIT_ERROR)
         )
     
-    # 调用业务逻辑
-    response = await handlers.text_extract_batch(request, trace_id)
+    # 调用业务逻辑，传递原始files数据
+    response = await handlers.text_extract_batch(request, trace_id, original_files)
     
     logger.info(f"Text extract batch completed - TraceID: {trace_id}")
     return BaseResponse.success(

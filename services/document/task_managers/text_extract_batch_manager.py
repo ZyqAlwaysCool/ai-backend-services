@@ -69,7 +69,7 @@ class TextExtractBatchTaskManager(BaseTaskManager):
         
         return task
     
-    async def submit_text_extract_batch_task(self, request: TextExtractBatchRequest, trace_id: str = None) -> TextExtractBatchResponse:
+    async def submit_text_extract_batch_task(self, request: TextExtractBatchRequest, trace_id: str = None, original_files: list = None) -> TextExtractBatchResponse:
         """提交文本提取批处理任务"""
         logger.info(f"Submitting text extract batch task - TraceID: {trace_id} | Files: {len(request.files)}")
         
@@ -83,9 +83,12 @@ class TextExtractBatchTaskManager(BaseTaskManager):
                 if not file_item.filename.lower().endswith('.docx'):
                     raise ValueError(f"仅支持DOCX格式文件,不支持: {file_item.filename}")
             
+            # 使用原始files数据（如果提供），否则使用request.files
+            files_to_use = original_files if original_files is not None else request.files
+            
             # 统一构建任务参数
             task_params = {
-                'files': request.files,
+                'files': files_to_use,
                 'extract_options': request.extract_options,
                 'trace_id': trace_id
             }
@@ -278,27 +281,38 @@ class TextExtractBatchTaskManager(BaseTaskManager):
                 )
             raise e
     
-    async def _process_single_file(self, file_item: Any, extract_options: Dict[str, Any], trace_id: str) -> FileExtractTask:
+    async def _process_single_file(self, file_item, extract_options: Dict[str, Any], trace_id: str) -> FileExtractTask:
         """处理单个文件的文本提取"""
-        filename = file_item.filename
-        input_type = getattr(file_item, 'input_type', 'base64')
-        
         temp_file_path = None
         should_cleanup_temp_file = False
         
+        # 获取文件项属性（支持字典和对象两种格式）
+        if isinstance(file_item, dict):
+            input_type = file_item.get('input_type', 'base64')
+            filename = file_item.get('filename', 'unknown.docx')
+            file_data_b64 = file_item.get('file_data')
+            temp_file_path_from_dict = file_item.get('temp_file_path')
+        else:
+            input_type = getattr(file_item, 'input_type', 'base64')
+            filename = getattr(file_item, 'filename', 'unknown.docx')
+            file_data_b64 = getattr(file_item, 'file_data', None)
+            temp_file_path_from_dict = getattr(file_item, 'temp_file_path', None)
+            
         try:
             # 根据input_type选择处理方式
-            if input_type == "file" and hasattr(file_item, 'temp_file_path'):
+            if input_type == "file":
                 # multipart上传，直接使用已有的临时文件
-                temp_file_path = file_item.temp_file_path
-                if not os.path.exists(temp_file_path):
+                temp_file_path = temp_file_path_from_dict
+                if not temp_file_path or not os.path.exists(temp_file_path):
                     raise Exception(f"临时文件不存在: {temp_file_path}")
                 with open(temp_file_path, 'rb') as f:
                     file_bytes = f.read()
             else:
                 # base64方式，需要解码并创建临时文件
-                file_data = file_item.file_data
-                file_bytes = base64.b64decode(file_data)
+                try:
+                    file_bytes = base64.b64decode(file_data_b64)
+                except Exception as decode_error:
+                    raise Exception(f"base64解码失败: {str(decode_error)}")
                 
                 # 创建临时文件
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as temp_file:
@@ -326,7 +340,7 @@ class TextExtractBatchTaskManager(BaseTaskManager):
                 from ..schemas import TextExtractRequest
                 text_request = TextExtractRequest(
                     input_type=input_type,
-                    file_data=file_item.file_data if input_type == 'base64' else "",
+                    file_data=file_data_b64 if input_type == 'base64' else "",
                     filename=filename,
                     extract_options=extract_options
                 )
@@ -344,9 +358,15 @@ class TextExtractBatchTaskManager(BaseTaskManager):
                 )
                 
             finally:
-                # 清理临时文件（只清理我们自己创建的临时文件）
-                if should_cleanup_temp_file and temp_file_path and os.path.exists(temp_file_path):
-                    os.unlink(temp_file_path)
+                # 清理临时文件
+                if temp_file_path and os.path.exists(temp_file_path):
+                    try:
+                        # base64方式：清理我们自己创建的临时文件
+                        # multipart方式：清理中间件创建的临时文件（在任务完成后）
+                        os.unlink(temp_file_path)
+                        logger.info(f"Cleaned up temp file: {temp_file_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to cleanup temp file {temp_file_path}: {str(e)}")
                     
         except Exception as e:
             logger.error(f"单文件文本提取失败 - File: {filename} | Error: {str(e)}")

@@ -187,7 +187,7 @@ class DocumentHandlers:
         # 调用文本处理器进行提取
         return await self.text_processor.process(request, temp_file_path, file_info, trace_id)
     
-    async def text_extract_batch(self, request: TextExtractBatchRequest, trace_id: str = None) -> TextExtractBatchResponse:
+    async def text_extract_batch(self, request: TextExtractBatchRequest, trace_id: str = None, original_files: list = None) -> TextExtractBatchResponse:
         """文本提取批处理处理"""
         logger.info(f"Text extract batch request started files={len(request.files)} | TraceID: {trace_id}")
         
@@ -196,7 +196,7 @@ class DocumentHandlers:
         
         try:
             # 提交批处理任务到任务管理器
-            return await self.text_extract_batch_manager.submit_text_extract_batch_task(request, trace_id)
+            return await self.text_extract_batch_manager.submit_text_extract_batch_task(request, trace_id, original_files)
         except RuntimeError as e:
             logger.error(f"Text extract batch task submission failed error={str(e)} | TraceID: {trace_id}")
             raise RuntimeError(f"批量处理服务暂时不可用，请稍后重试。详细错误：{str(e)}")
