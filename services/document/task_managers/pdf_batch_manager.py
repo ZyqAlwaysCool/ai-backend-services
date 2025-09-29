@@ -3,7 +3,7 @@ Description: PDF批处理任务管理器, 负责PDF批量解析任务的管理�
 Author: zyq
 Date: 2025-08-28 11:14:11
 LastEditors: zyq
-LastEditTime: 2025-09-01 09:22:30
+LastEditTime: 2025-09-29 16:49:20
 '''
 import base64
 import tempfile
@@ -97,7 +97,8 @@ class PDFBatchTaskManager(BaseTaskManager):
     async def submit_pdf_batch_task(
         self, 
         request: PDFParserBatchRequest, 
-        trace_id: str = None
+        trace_id: str = None,
+        original_files: list = None
     ) -> PDFParserBatchResponse:
         """
         提交PDF批处理任务
@@ -112,9 +113,12 @@ class PDFBatchTaskManager(BaseTaskManager):
         logger.info(f"Submitting PDF batch task - TraceID: {trace_id} | Files: {len(request.files)}")
         
         try:
+            # 使用原始files数据（如果提供），否则使用request.files
+            files_to_use = original_files if original_files is not None else request.files
+            
             # 统一构建任务参数
             task_params = {
-                'files': request.files,
+                'files': files_to_use,
                 'output_format': request.output_format,
                 'parser_options': request.parser_options,
                 'trace_id': trace_id
@@ -279,7 +283,7 @@ class PDFBatchTaskManager(BaseTaskManager):
     
     async def _process_single_pdf(
         self,
-        file_item: PDFFileItem,
+        file_item,  # 可以是PDFFileItem对象或原始字典
         output_format: str,
         parser_options: Dict[str, Any],
         sub_task_id: str,
@@ -302,31 +306,56 @@ class PDFBatchTaskManager(BaseTaskManager):
         start_time = time.time()
         
         temp_file_path = None
-        try:
-            # 解码base64数据并保存到临时文件
-            try:
-                file_data = base64.b64decode(file_item.file_data)
-            except Exception as decode_error:
-                raise Exception(f"base64解码失败: {str(decode_error)}")
+        should_cleanup_temp_file = False
+        
+        # 获取文件项属性（支持字典和对象两种格式）
+        if isinstance(file_item, dict):
+            input_type = file_item.get('input_type', 'base64')
+            filename = file_item.get('filename', 'unknown.pdf')
+            file_data_b64 = file_item.get('file_data')
+            temp_file_path_from_dict = file_item.get('temp_file_path')
+        else:
+            input_type = getattr(file_item, 'input_type', 'base64')
+            filename = getattr(file_item, 'filename', 'unknown.pdf')
+            file_data_b64 = getattr(file_item, 'file_data', None)
+            temp_file_path_from_dict = getattr(file_item, 'temp_file_path', None)
             
-            # 创建临时文件
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
-                temp_file.write(file_data)
-                temp_file_path = temp_file.name
+        try:
+            
+            # 根据input_type选择处理方式
+            if input_type == "file":
+                # multipart上传，直接使用已有的临时文件
+                temp_file_path = temp_file_path_from_dict
+                if not temp_file_path or not os.path.exists(temp_file_path):
+                    raise Exception(f"临时文件不存在: {temp_file_path}")
+                with open(temp_file_path, 'rb') as f:
+                    file_data = f.read()
+            else:
+                # base64方式，需要解码并创建临时文件
+                try:
+                    file_data = base64.b64decode(file_data_b64)
+                except Exception as decode_error:
+                    raise Exception(f"base64解码失败: {str(decode_error)}")
+                
+                # 创建临时文件
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
+                    temp_file.write(file_data)
+                    temp_file_path = temp_file.name
+                should_cleanup_temp_file = True
             
             # 创建文件信息
             file_info = FileInfo(
-                filename=file_item.filename,
+                filename=filename,
                 content_type='application/pdf',
                 file_size=len(file_data),
-                input_type='base64'
+                input_type=input_type
             )
             
             # 创建PDF解析请求
             pdf_request = PDFParserRequest(
-                input_type="base64",
-                file_data=file_item.file_data,
-                filename=file_item.filename,
+                input_type=input_type,
+                file_data=file_data_b64 if input_type == 'base64' else None,
+                filename=filename,
                 output_format=output_format,
                 parser_options=parser_options
             )
@@ -348,7 +377,7 @@ class PDFBatchTaskManager(BaseTaskManager):
                 result_data = response.download_url
             
             return {
-                'filename': file_item.filename,
+                'filename': filename,
                 'status': 'success',
                 'output_format': output_format,
                 'data': result_data,
@@ -358,10 +387,10 @@ class PDFBatchTaskManager(BaseTaskManager):
             
         except Exception as e:
             processing_time = time.time() - start_time
-            logger.error(f"Failed to process PDF file {file_item.filename}: {str(e)}")
+            logger.error(f"Failed to process PDF file {filename}: {str(e)}")
             
             return {
-                'filename': file_item.filename,
+                'filename': filename,
                 'status': 'failed',
                 'output_format': output_format,
                 'data': None,
@@ -373,7 +402,10 @@ class PDFBatchTaskManager(BaseTaskManager):
             # 清理临时文件
             if temp_file_path and os.path.exists(temp_file_path):
                 try:
+                    # base64方式：清理我们自己创建的临时文件
+                    # multipart方式：清理中间件创建的临时文件（在任务完成后）
                     os.unlink(temp_file_path)
+                    logger.info(f"Cleaned up temp file: {temp_file_path}")
                 except Exception as e:
                     logger.warning(f"Failed to cleanup temp file {temp_file_path}: {str(e)}")
     

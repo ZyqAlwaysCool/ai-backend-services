@@ -83,7 +83,7 @@ class DocumentHandlers:
         """PDF解析处理,提取文本、图片、表格内容"""
         return await self.pdf_processor.process(request, temp_file_path, file_info, trace_id)
     
-    async def pdf_parser_batch(self, request: PDFParserBatchRequest, trace_id: str = None) -> PDFParserBatchResponse:
+    async def pdf_parser_batch(self, request: PDFParserBatchRequest, trace_id: str = None, original_files: list = None) -> PDFParserBatchResponse:
         """PDF批量解析处理"""
         logger.info(f"PDF batch request started files={len(request.files)} | TraceID: {trace_id}")
         
@@ -93,7 +93,7 @@ class DocumentHandlers:
         
         try:
             # 提交批处理任务到任务管理器
-            return await self.pdf_batch_manager.submit_pdf_batch_task(request, trace_id)
+            return await self.pdf_batch_manager.submit_pdf_batch_task(request, trace_id, original_files)
         except Exception as e:
             # 捕获任务管理器运行时错误，包括Worker不可用
             logger.error(f"submit pdf batch task failed. error={str(e)} | TraceID: {trace_id}")

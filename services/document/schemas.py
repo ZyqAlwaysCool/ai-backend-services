@@ -26,8 +26,9 @@ class PDFParserResponse(BaseModel):
 
 class PDFFileItem(BaseModel):
     """PDF文件项模型"""
-    file_data: str = Field(..., description="PDF文件base64编码")
+    file_data: Optional[str] = Field(None, description="PDF文件base64编码(input_type=base64时使用)")
     filename: str = Field(..., description="文件名")
+    input_type: Optional[str] = Field("base64", description="输入类型: base64 | file")
 
 
 class PDFParserBatchRequest(BaseModel):
@@ -119,8 +120,9 @@ class TextExtractResponse(BaseModel):
 
 class UploadFileItem(BaseModel):
     """上传文件项模型"""
-    file_data: str = Field(..., description="文件base64编码")
+    file_data: Optional[str] = Field(None, description="文件base64编码(input_type=base64时使用)")
     filename: str = Field(..., description="文件名")
+    input_type: Optional[str] = Field("base64", description="输入类型: base64 | file")
 
 
 class FileExtractStatus(str, Enum):

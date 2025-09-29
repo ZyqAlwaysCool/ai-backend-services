@@ -38,6 +38,7 @@ services:
       - txt
       - markdown
     max_file_size: 52428800  # 50MB
+    max_batch_files: 10  # 批处理最大文件数量
 
   # 知识检索服务配置
   retrieval:

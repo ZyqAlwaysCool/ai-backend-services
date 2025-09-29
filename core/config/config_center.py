@@ -3,7 +3,7 @@ Description: 全局配置中心, 业务无关
 Author: zyq
 Date: 2025-07-29 17:50:05
 LastEditors: zyq
-LastEditTime: 2025-09-18 10:20:55
+LastEditTime: 2025-09-29 16:14:13
 '''
 import yaml
 import os
@@ -90,6 +90,7 @@ class DocumentConfig(BaseServiceConfig):
     """Document服务配置"""
     supported_formats: List[str] = Field(default_factory=list, description="支持的文件格式")
     max_file_size: int = Field(52428800, description="最大文件大小(字节)", ge=1)
+    max_batch_files: int = Field(10, description="最大批处理文件数", ge=1)
 
 
 class DocumentCleanPerformanceConfig(BaseModel):

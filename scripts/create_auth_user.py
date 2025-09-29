@@ -14,16 +14,7 @@ from core.storage.mongo_storage import MongoStorage
 from core.auth.user_storage import AuthUserStorage
 from core.config import load_app_config
 
-# 预定义权限模板
-PERMISSION_TEMPLATES = {
-    "basic": ["chat.single_turn", "chat.multi_turn"],
-    "premium": ["chat.*", "document.*"],
-    "admin": ["chat.*", "document.*", "retrieval.*", "admin.*"],
-    "chat_only": ["chat.single_turn", "chat.multi_turn", "chat.models"],
-    "document_only": ["document.upload", "document.process", "document.download"]
-}
-
-def create_auth_user(business_name: str, permission_template: str = "basic", custom_permissions: list = None):
+def create_auth_user(business_name: str):
     """创建认证用户"""
     print(f"🚀 正在为业务 '{business_name}' 创建认证用户...")
     
@@ -44,17 +35,28 @@ def create_auth_user(business_name: str, permission_template: str = "basic", cus
         print(f"❌ 数据库连接失败: {str(e)}")
         return
     
-    # 确定权限
-    if custom_permissions:
-        permissions = custom_permissions
-        print(f"📋 使用自定义权限: {permissions}")
-    elif permission_template in PERMISSION_TEMPLATES:
-        permissions = PERMISSION_TEMPLATES[permission_template]
-        print(f"📋 使用权限模板 '{permission_template}': {permissions}")
-    else:
-        print(f"❌ 未知的权限模板: {permission_template}")
-        print(f"💡 可用模板: {', '.join(PERMISSION_TEMPLATES.keys())}")
-        return
+    # 检查用户是否已存在
+    username = f"{business_name}_auth_user"
+    try:
+        existing_user = user_storage.get_user_by_username(username)
+        if existing_user:
+            print(f"⚠️  业务 '{business_name}' 的认证用户已存在!")
+            print("=" * 50)
+            print(f"👤 用户名: {existing_user.username}")
+            print(f"🆔 用户ID: {existing_user.user_id}")
+            print(f"📊 状态: {existing_user.status}")
+            print(f"⏰ 创建时间: {existing_user.created_at}")
+            print(f"🔐 最后登录: {existing_user.last_login or '从未登录'}")
+            print("=" * 50)
+            print("💡 如需重新创建，请联系系统管理员删除现有用户")
+            return
+    except Exception:
+        # 用户不存在，继续创建
+        pass
+    
+    # 使用简化的全权限
+    permissions = ["*"]
+    print(f"📋 使用权限: 全部服务权限")
     
     # 创建用户
     try:
@@ -66,11 +68,15 @@ def create_auth_user(business_name: str, permission_template: str = "basic", cus
         print(f"👤 用户名: {user.username}")
         print(f"🔑 密码: {password}")
         print(f"🆔 用户ID: {user.user_id}")
-        print(f"📜 权限列表: {', '.join(user.permissions)}")
+        print(f"📜 权限: 全部服务权限")
         print(f"⏰ 创建时间: {user.created_at}")
         print("=" * 50)
         print("\n⚠️  请妥善保管以上信息，密码不会再次显示!")
         print("💡 业务方可使用以上用户名和密码调用认证接口获取token")
+        print("💡 测试登录命令:")
+        print(f'curl -X POST "http://localhost:20000/auth/login" \\')
+        print(f'  -H "Content-Type: application/json" \\')
+        print(f'  -d \'{{"username": "{user.username}", "password": "{password}"}}\'')
         
     except ValueError as e:
         print(f"❌ 创建失败: {str(e)}")
@@ -99,9 +105,12 @@ def list_auth_users():
         print("=" * 80)
         for user in users:
             status_emoji = "✅" if user.get("status") == "active" else "❌"
+            permissions = user.get('permissions', [])
+            perm_display = "全部服务权限" if permissions == ["*"] else ', '.join(permissions) if permissions else "无权限"
+            
             print(f"{status_emoji} {user.get('username')}")
             print(f"   用户ID: {user.get('user_id')}")
-            print(f"   权限: {', '.join(user.get('permissions', []))}")
+            print(f"   权限: {perm_display}")
             print(f"   状态: {user.get('status')}")
             print(f"   创建时间: {user.get('created_at')}")
             print(f"   最后登录: {user.get('last_login', '从未登录')}")
@@ -111,23 +120,20 @@ def list_auth_users():
         print(f"❌ 获取用户列表失败: {str(e)}")
 
 def main():
-    parser = argparse.ArgumentParser(description="AI服务平台认证用户管理工具")
+    parser = argparse.ArgumentParser(
+        description="AI服务平台认证用户管理工具", 
+        epilog="""
+使用示例:
+  创建用户: python scripts/create_auth_user.py create myapp
+  列出用户: python scripts/create_auth_user.py list
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     subparsers = parser.add_subparsers(dest="command", help="可用命令")
     
     # 创建用户命令
     create_parser = subparsers.add_parser("create", help="创建认证用户")
     create_parser.add_argument("business_name", help="业务名称 (如: law_ai, finance_ai)")
-    create_parser.add_argument(
-        "--template", 
-        choices=list(PERMISSION_TEMPLATES.keys()),
-        default="basic",
-        help="权限模板 (默认: basic)"
-    )
-    create_parser.add_argument(
-        "--permissions", 
-        nargs="+",
-        help="自定义权限列表 (会覆盖模板)"
-    )
     
     # 列出用户命令
     list_parser = subparsers.add_parser("list", help="列出所有认证用户")
@@ -135,15 +141,14 @@ def main():
     args = parser.parse_args()
     
     if args.command == "create":
-        create_auth_user(
-            business_name=args.business_name,
-            permission_template=args.template,
-            custom_permissions=args.permissions
-        )
+        create_auth_user(args.business_name)
     elif args.command == "list":
         list_auth_users()
     else:
         parser.print_help()
+        print("\n💡 常用命令:")
+        print("  python scripts/create_auth_user.py create myapp")
+        print("  python scripts/create_auth_user.py list")
 
 if __name__ == "__main__":
     main()

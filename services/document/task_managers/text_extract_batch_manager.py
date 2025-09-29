@@ -281,16 +281,30 @@ class TextExtractBatchTaskManager(BaseTaskManager):
     async def _process_single_file(self, file_item: Any, extract_options: Dict[str, Any], trace_id: str) -> FileExtractTask:
         """处理单个文件的文本提取"""
         filename = file_item.filename
-        file_data = file_item.file_data
+        input_type = getattr(file_item, 'input_type', 'base64')
+        
+        temp_file_path = None
+        should_cleanup_temp_file = False
         
         try:
-            # 解码base64文件数据
-            file_bytes = base64.b64decode(file_data)
-            
-            # 创建临时文件
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as temp_file:
-                temp_file.write(file_bytes)
-                temp_file_path = temp_file.name
+            # 根据input_type选择处理方式
+            if input_type == "file" and hasattr(file_item, 'temp_file_path'):
+                # multipart上传，直接使用已有的临时文件
+                temp_file_path = file_item.temp_file_path
+                if not os.path.exists(temp_file_path):
+                    raise Exception(f"临时文件不存在: {temp_file_path}")
+                with open(temp_file_path, 'rb') as f:
+                    file_bytes = f.read()
+            else:
+                # base64方式，需要解码并创建临时文件
+                file_data = file_item.file_data
+                file_bytes = base64.b64decode(file_data)
+                
+                # 创建临时文件
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as temp_file:
+                    temp_file.write(file_bytes)
+                    temp_file_path = temp_file.name
+                should_cleanup_temp_file = True
             
             # 验证临时文件是否正确创建
             if not os.path.exists(temp_file_path):
@@ -304,15 +318,15 @@ class TextExtractBatchTaskManager(BaseTaskManager):
                     filename=filename,
                     content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                     file_size=len(file_bytes),
-                    input_type="file",
+                    input_type=input_type,
                     temp_file_path=temp_file_path
                 )
                 
                 # 创建文本提取请求
                 from ..schemas import TextExtractRequest
                 text_request = TextExtractRequest(
-                    input_type="file",
-                    file_data="",  # 文件模式不需要base64数据
+                    input_type=input_type,
+                    file_data=file_item.file_data if input_type == 'base64' else "",
                     filename=filename,
                     extract_options=extract_options
                 )
@@ -330,8 +344,8 @@ class TextExtractBatchTaskManager(BaseTaskManager):
                 )
                 
             finally:
-                # 清理临时文件
-                if os.path.exists(temp_file_path):
+                # 清理临时文件（只清理我们自己创建的临时文件）
+                if should_cleanup_temp_file and temp_file_path and os.path.exists(temp_file_path):
                     os.unlink(temp_file_path)
                     
         except Exception as e:

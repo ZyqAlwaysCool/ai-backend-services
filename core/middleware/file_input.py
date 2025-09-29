@@ -3,7 +3,7 @@ Description: 文件输入处理中间件
 Author: zyq
 Date: 2025-09-02 17:17:17
 LastEditors: zyq
-LastEditTime: 2025-09-18 11:03:45
+LastEditTime: 2025-09-29 15:48:46
 '''
 import base64
 import tempfile
@@ -21,9 +21,10 @@ from core.schemas.base_resp_model_define import BaseResponse
 class FileInputMiddleware(BaseHTTPMiddleware):
     """文件输入处理中间件"""
     
-    def __init__(self, app, max_file_size: int = 10 * 1024 * 1024):  # 默认10MB
+    def __init__(self, app, max_file_size: int = 10 * 1024 * 1024, max_batch_files: int = 10):
         super().__init__(app)
         self.max_file_size = max_file_size
+        self.max_batch_files = max_batch_files
         # 需要处理文件的具体路径
         self.file_endpoints = {
             "/document/pdf-parser",
@@ -31,25 +32,37 @@ class FileInputMiddleware(BaseHTTPMiddleware):
             "/document/text-extract",
             "/document/table-extract"
         }
+        # 批处理接口路径
+        self.batch_endpoints = {
+            "/document/pdf-parser-batch",
+            "/document/text-extract-batch"
+        }
     
     async def dispatch(self, request: Request, call_next):
         # 检查是否是需要处理文件的具体接口
         needs_file_processing = request.url.path in self.file_endpoints
+        needs_batch_processing = request.url.path in self.batch_endpoints
         
-        if not needs_file_processing:
+        if not needs_file_processing and not needs_batch_processing:
             return await call_next(request)
         
         trace_id = getattr(request.state, 'trace_id', 'unknown')
         temp_file_path = None
         
         try:
-            # 处理文件输入
-            temp_file_path, file_info, processed_body = await self._process_file_input(request, trace_id)
-            
-            # 将处理结果存储到request state中供后续使用
-            request.state.temp_file_path = temp_file_path
-            request.state.file_info = file_info
-            request.state.processed_request_body = processed_body
+            if needs_file_processing:
+                # 处理单文件输入
+                temp_file_path, file_info, processed_body = await self._process_file_input(request, trace_id)
+                
+                # 将处理结果存储到request state中供后续使用
+                request.state.temp_file_path = temp_file_path
+                request.state.file_info = file_info
+                request.state.processed_request_body = processed_body
+            elif needs_batch_processing:
+                # 处理批处理文件输入
+                temp_file_paths, processed_body = await self._process_batch_file_input(request, trace_id)
+                request.state.batch_temp_file_paths = temp_file_paths  # 存储临时文件路径列表
+                request.state.processed_request_body = processed_body
             
             # 继续处理请求
             response = await call_next(request)
@@ -65,9 +78,12 @@ class FileInputMiddleware(BaseHTTPMiddleware):
             from core.exceptions import FileProcessException
             raise FileProcessException("文件处理失败", {"original_error": str(e)})
         finally:
-            # 清理临时文件
+            # 单文件处理：立即清理临时文件
             if temp_file_path:
                 self._cleanup_temp_file(temp_file_path)
+            
+            # 批处理：不在中间件中清理，由任务处理器在完成后清理
+            # 这样避免异步任务执行时临时文件已被删除的问题
     
     async def _process_file_input(self, request: Request, trace_id: str) -> tuple:
         """处理文件输入，返回临时文件路径、文件信息和处理后的请求体"""
@@ -274,6 +290,108 @@ class FileInputMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             logger.error(f"Failed to save temp file: {str(e)}")
             raise HTTPException(status_code=500, detail="临时文件创建失败")
+    
+    async def _process_batch_file_input(self, request: Request, trace_id: str) -> tuple:
+        """处理批处理文件输入，返回临时文件路径列表和处理后的请求体"""
+        content_type = request.headers.get("content-type", "")
+        
+        if content_type.startswith("multipart/form-data"):
+            return await self._process_multipart_batch_files(request, trace_id)
+        elif content_type.startswith("application/json"):
+            # JSON方式直接返回原始body，保持向下兼容
+            body = await request.json()
+            return [], body  # 无临时文件，返回空列表
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="批处理接口不支持的Content-Type，请使用multipart/form-data或application/json"
+            )
+    
+    async def _process_multipart_batch_files(self, request: Request, trace_id: str) -> tuple:
+        """处理multipart批处理文件上传，保存为临时文件"""
+        try:
+            form = await request.form()
+            
+            # 获取input_type
+            input_type = form.get("input_type")
+            if input_type != "file":
+                raise HTTPException(status_code=400, detail="multipart批处理上传时input_type必须为file")
+            
+            files = []
+            temp_file_paths = []
+            file_count = 0
+            
+            # 收集所有文件字段
+            for key, value in form.items():
+                if hasattr(value, 'filename') and hasattr(value, 'file'):
+                    file_count += 1
+                    if file_count > self.max_batch_files:
+                        # 清理已创建的临时文件
+                        for temp_path in temp_file_paths:
+                            self._cleanup_temp_file(temp_path)
+                        raise HTTPException(
+                            status_code=400, 
+                            detail=f"批处理最多支持{self.max_batch_files}个文件"
+                        )
+                    
+                    # 读取文件内容
+                    file_content = await value.read()
+                    file_size = len(file_content)
+                    
+                    if file_size > self.max_file_size:
+                        # 清理已创建的临时文件
+                        for temp_path in temp_file_paths:
+                            self._cleanup_temp_file(temp_path)
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"文件 {value.filename} 大小超过限制({self.max_file_size / 1024 / 1024}MB)"
+                        )
+                    
+                    # 保存为临时文件
+                    temp_file_path = await self._save_to_temp_file(file_content, value.filename)
+                    temp_file_paths.append(temp_file_path)
+                    
+                    # 与PDFFileItem、UploadFileItem结构保持一致, 在业务请求中解包
+                    files.append({
+                        "filename": value.filename,
+                        "file_data": None,  # multipart方式不使用base64
+                        "input_type": "file",
+                        "temp_file_path": temp_file_path  # 添加临时文件路径
+                    })
+            
+            if not files:
+                raise HTTPException(status_code=400, detail="未找到任何文件")
+            
+            # 构建处理后的请求体
+            processed_body = {
+                "files": files
+            }
+            
+            # 根据不同的批处理接口添加特定参数
+            if "/pdf-parser-batch" in request.url.path:
+                processed_body.update({
+                    "output_format": form.get("output_format", "docx"),
+                    "parser_options": json.loads(form.get("parser_options", "{}"))
+                })
+            elif "/text-extract-batch" in request.url.path:
+                processed_body.update({
+                    "extract_options": json.loads(form.get("extract_options", "{}"))
+                })
+            
+            logger.info(f"Processed batch multipart files - TraceID: {trace_id} | Count: {len(files)}")
+            return temp_file_paths, processed_body
+            
+        except HTTPException:
+            # 清理已创建的临时文件
+            for temp_path in temp_file_paths:
+                self._cleanup_temp_file(temp_path)
+            raise
+        except Exception as e:
+            # 清理已创建的临时文件
+            for temp_path in temp_file_paths:
+                self._cleanup_temp_file(temp_path)
+            logger.error(f"Batch multipart file processing failed - TraceID: {trace_id} | Error: {str(e)}")
+            raise HTTPException(status_code=500, detail="批处理文件处理失败")
     
     def _cleanup_temp_file(self, temp_file_path: str):
         """清理临时文件"""

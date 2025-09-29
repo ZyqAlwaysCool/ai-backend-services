@@ -74,10 +74,25 @@ async def pdf_parser(http_request: Request):
 
 
 @document_router.post("/pdf-parser-batch", response_model=BaseResponse, summary="PDF批量解析(异步接口)")
-async def pdf_parser_batch(request: PDFParserBatchRequest, http_request: Request):
+async def pdf_parser_batch(http_request: Request):
     """PDF批量解析接口(异步响应)"""
     trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
     logger.info(f"PDF parser batch request started - TraceID: {trace_id}")
+    
+    # 从中间件获取处理后的数据
+    processed_body = getattr(http_request.state, 'processed_request_body', None)
+    
+    if not processed_body:
+        raise BaseBusinessException(
+            code=FILE_ERROR_PREPROCESS_FAILED,
+            message=get_error_message(FILE_ERROR_PREPROCESS_FAILED)
+        )
+    
+    # 保存原始files数据（包含temp_file_path信息）
+    original_files = processed_body.get('files', [])
+    
+    # 构建请求对象
+    request = PDFParserBatchRequest(**processed_body)
     
     # 从service_registry获取document服务的handlers实例
     service_registry = getattr(http_request.app.state, 'service_registry', None)
@@ -90,8 +105,8 @@ async def pdf_parser_batch(request: PDFParserBatchRequest, http_request: Request
             message=get_service_error_message(DOCUMENT_SERVICE_INIT_ERROR)
         )
     
-    # 调用业务逻辑
-    response = await handlers.pdf_parser_batch(request, trace_id)
+    # 调用业务逻辑，传递原始files数据
+    response = await handlers.pdf_parser_batch(request, trace_id, original_files)
     
     logger.info(f"PDF parser batch request completed - TraceID: {trace_id}")
     return BaseResponse.success(
@@ -213,10 +228,22 @@ async def text_extract(http_request: Request):
 
 
 @document_router.post("/text-extract-batch", response_model=BaseResponse, summary="文本提取批处理(异步接口)")
-async def text_extract_batch(request: TextExtractBatchRequest, http_request: Request):
+async def text_extract_batch(http_request: Request):
     """文本提取批处理接口（异步响应）"""
     trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
     logger.info(f"Text extract batch started - TraceID: {trace_id}")
+    
+    # 从中间件获取处理后的数据
+    processed_body = getattr(http_request.state, 'processed_request_body', None)
+    
+    if not processed_body:
+        raise BaseBusinessException(
+            code=FILE_ERROR_PREPROCESS_FAILED,
+            message=get_error_message(FILE_ERROR_PREPROCESS_FAILED)
+        )
+    
+    # 构建请求对象
+    request = TextExtractBatchRequest(**processed_body)
     
     # 从service_registry获取document服务的handlers实例
     service_registry = getattr(http_request.app.state, 'service_registry', None)

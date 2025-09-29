@@ -189,7 +189,11 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 # 添加中间件（注意顺序 - 后添加的先执行）
-app.add_middleware(FileInputMiddleware, max_file_size=get_services_config().document.max_file_size)  # 文件输入处理中间件
+app.add_middleware(
+    FileInputMiddleware, 
+    max_file_size=get_services_config().document.max_file_size,
+    max_batch_files=get_services_config().document.max_batch_files
+)  # 文件输入处理中间件
 app.add_middleware(AuthMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RequestTraceMiddleware)

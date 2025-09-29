@@ -3,14 +3,14 @@ Description: OpenAI协议适配器(兼容所有OpenAI协议的模型)
 Author: zyq
 Date: 2025-09-03 18:30:51
 LastEditors: zyq
-LastEditTime: 2025-09-18 15:04:22
+LastEditTime: 2025-09-29 16:15:03
 '''
 from typing import Dict, Any, AsyncGenerator, List
 from loguru import logger
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-from langchain.callbacks import get_openai_callback
+from langchain_community.callbacks.manager import get_openai_callback
 
 from core.config.error_codes import COMMON_ERROR_REQUEST_PARSE_ERROR
 from core.exceptions import BaseBusinessException
