@@ -3,7 +3,7 @@ Description: 全局配置中心, 业务无关
 Author: zyq
 Date: 2025-07-29 17:50:05
 LastEditors: zyq
-LastEditTime: 2025-09-29 16:14:13
+LastEditTime: 2025-10-11 10:31:40
 '''
 import yaml
 import os
@@ -97,7 +97,7 @@ class DocumentCleanPerformanceConfig(BaseModel):
     """文档清洗性能配置"""
     sync_threshold: int = Field(20, description="同步处理阈值", ge=1, le=100)
     chunk_batch_size: int = Field(10, description="异步处理时的分批大小", ge=5, le=50)
-    single_doc_timeout_seconds: int = Field(30, description="单个文档清洗超时时间(秒)", ge=10, le=300)
+    single_doc_timeout_seconds: int = Field(60, description="单个文档清洗超时时间(秒)", ge=10, le=300)
 
 class RetrievalConfig(BaseServiceConfig):
     """Retrieval服务配置"""
