@@ -42,9 +42,15 @@ class DocumentLanguage(str, Enum):
 class SplitMethod(str, Enum):
     """切分方式"""
     WORD = "word"           # 按词切分
-    SENTENCE = "sentence"   # 按句子切分  
-    PASSAGE = "passage"     # 按段落切分
+    SENTENCE = "sentence"   # 按句子切分
     CUSTOM = "custom"       # 自定义分隔符
+
+class SplitterType(str, Enum):
+    """文档切分器类型"""
+    RECURSIVE = "recursive"     # 递归切分
+    HIERARCHICAL = "hierarchical"   # 层次切分
+    CH = "ch"                   # 中文切分
+    DEFAULT = "default"         # 默认
 
 class ChineseGranularity(str, Enum):
     """中文分词粒度"""
@@ -53,10 +59,11 @@ class ChineseGranularity(str, Enum):
 
 class DocumentCleanSettings(BaseModel):
     """文档清洗设置"""
-    language: DocumentLanguage = Field(DocumentLanguage.CHINESE, description="文档语言")
+    #language: DocumentLanguage = Field(DocumentLanguage.CHINESE, description="文档语言")
     split_method: SplitMethod = Field(SplitMethod.SENTENCE, description="切分方式")
-    split_length: int = Field(200, description="分割长度", ge=10, le=2000)
-    split_overlap: int = Field(20, description="重叠长度", ge=0, le=500)
+    split_length: int = Field(512, description="分割长度", ge=0, le=5000)
+    split_overlap: int = Field(100, description="重叠长度", ge=0, le=500) #重叠长度一般为split_length的10%~20%
+    splitter: SplitterType = Field(SplitterType.DEFAULT, description="文档切分器类型")
     
     # 中文特有配置
     chinese_granularity: Optional[ChineseGranularity] = Field(

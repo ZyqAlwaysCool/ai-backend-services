@@ -3,7 +3,7 @@ Description: 文档清洗组件 - 支持同步/异步清洗策略和超时控制
 Author: zyq
 Date: 2025-09-08 16:53:50
 LastEditors: zyq
-LastEditTime: 2025-09-08 17:07:59
+LastEditTime: 2025-10-11 10:22:10
 '''
 
 import asyncio
@@ -15,13 +15,13 @@ from pathlib import Path
 
 # HanLP环境变量已在app.py中设置，这里直接导入即可
 from haystack import Document
-from haystack.components.preprocessors import DocumentSplitter
+from haystack.components.preprocessors import DocumentSplitter, RecursiveDocumentSplitter, HierarchicalDocumentSplitter
 from haystack_integrations.components.preprocessors.hanlp import ChineseDocumentSplitter
 from loguru import logger
 
 logger.info(f"Using HANLP_HOME: {os.environ.get('HANLP_HOME', 'NOT SET')}")
 
-from ..schemas import DocumentLanguage, SplitMethod, ChineseGranularity, DocumentCleanSettings
+from ..schemas import DocumentLanguage, SplitMethod, SplitterType, DocumentCleanSettings
 from core.config import get_services_config
 
 
@@ -65,10 +65,15 @@ class DocumentCleaner:
     
     def _create_splitter(self, settings: DocumentCleanSettings):
         """根据设置创建合适的分割器"""
-        if settings.language == DocumentLanguage.CHINESE:
+        if settings.splitter == SplitterType.RECURSIVE:
+            return self._create_recursive_splitter(settings)
+        elif settings.splitter == SplitterType.HIERARCHICAL:
+            return self._create_hierarchical_splitter(settings)
+        elif settings.splitter == SplitterType.CH:
             return self._create_chinese_splitter(settings)
         else:
             return self._create_english_splitter(settings)
+        
     
     def _create_chinese_splitter(self, settings: DocumentCleanSettings) -> ChineseDocumentSplitter:
         """创建中文分割器"""
@@ -120,6 +125,33 @@ class DocumentCleaner:
             split_length=settings.split_length,
             split_overlap=settings.split_overlap,
             language="en"
+        )
+    
+    def _create_recursive_splitter(self, settings: DocumentCleanSettings) -> RecursiveDocumentSplitter:
+        """递归文档分割器"""
+        if settings.split_method == SplitMethod.CUSTOM:
+            if not settings.custom_separator:
+                raise ValueError("使用自定义分割方式时必须提供custom_separator")
+            
+            splitter = RecursiveDocumentSplitter(
+                split_length=settings.split_length,
+                split_overlap=settings.split_overlap,
+                separators=[settings.custom_separator])
+        else:
+            # 标准分割方式
+            splitter = RecursiveDocumentSplitter(
+                split_length=settings.split_length,
+                split_overlap=settings.split_overlap,)
+        
+        splitter.warm_up()
+        return splitter
+    
+    def _create_hierarchical_splitter(self, settings: DocumentCleanSettings) -> HierarchicalDocumentSplitter:
+        """父子结构文档分割器"""
+        return HierarchicalDocumentSplitter(
+            block_sizes={settings.split_length},
+            split_overlap=settings.split_overlap,
+            split_by= "word" if settings.split_method not in ["word", "sentence"] else settings.split_method
         )
     
     async def clean_single_document_with_timeout(self,
@@ -183,6 +215,9 @@ class DocumentCleaner:
         
         try:
             # 创建分割器
+            if settings.split_length < settings.split_overlap:
+                raise ValueError("document清洗错误. err: split_length < split_overlap")
+            
             splitter = self._create_splitter(settings)
             logger.info(f"Created splitter - Language: {settings.language}, Method: {settings.split_method}")
             
@@ -219,7 +254,7 @@ class DocumentCleaner:
                 "avg_chunk_size": self._calculate_avg_chunk_size(all_chunks),
                 "language_used": settings.language.value,
                 "split_method_used": settings.split_method.value,
-                "splitter_type": "chinese" if settings.language == DocumentLanguage.CHINESE else "english"
+                "splitter_type": settings.splitter
             }
             
             logger.info(f"Document cleaning batch completed - TraceID: {trace_id}, Success: {success_count}, Failed: {len(failed_docs)}, Chunks: {len(all_chunks)}")
@@ -245,7 +280,7 @@ class DocumentCleaner:
             raise ValueError("使用自定义分割方式时必须提供custom_separator")
         
         # 验证中文粒度设置（只在中文模式下需要）
-        if settings.language == DocumentLanguage.CHINESE and not settings.chinese_granularity:
+        if settings.splitter == SplitterType.CH and not settings.chinese_granularity:
             raise ValueError("中文模式下必须设置chinese_granularity")
         
         # 验证参数范围

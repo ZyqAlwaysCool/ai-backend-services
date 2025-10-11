@@ -3,7 +3,7 @@ Description: Retrieval服务业务逻辑处理器
 Author: zyq
 Date: 2025-09-15 17:19:58
 LastEditors: zyq
-LastEditTime: 2025-09-19 17:19:03
+LastEditTime: 2025-10-11 10:26:27
 '''
 
 import os
@@ -530,7 +530,6 @@ class RetrievalHandlers:
             raise ValueError(f"No document store found for KB: {knowledge_base_name}, Version: {kb_version}")
         
         retriever = QdrantEmbeddingRetriever(document_store=document_store)
-        print("docs=", document_store.count_documents())
         retrieval_docs = retriever.run(query_embedding=query_with_embeddings)["documents"]
         
         # 封装检索结果
