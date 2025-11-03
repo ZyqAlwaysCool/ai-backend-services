@@ -1,7 +1,9 @@
 '''
 Description: 服务基类
 Author: zyq
-Date: 2025-01-21
+Date: 2025-08-21 16:22:44
+LastEditors: zyq
+LastEditTime: 2025-10-11 10:39:16
 '''
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional
