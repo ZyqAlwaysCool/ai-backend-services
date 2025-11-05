@@ -3,7 +3,7 @@ Description: Chat服务API路由定义
 Author: zyq
 Date: 2025-09-03 18:29:16
 LastEditors: zyq
-LastEditTime: 2025-09-18 15:57:26
+LastEditTime: 2025-11-05 11:26:15
 '''
 
 import uuid
@@ -14,12 +14,23 @@ from loguru import logger
 from core.schemas.base_resp_model_define import BaseResponse
 from core.config.error_codes import *
 from core.exceptions import ValidationException, BaseBusinessException
-from .schemas import ChatRequest
+from .schemas import ChatRequest, AddChatFlowApiKeyRequest
 from .handlers import ChatHandlers
 
 
 chat_router = APIRouter(tags=["对话服务"])
 
+def check_service_initialized(http_request: Request):
+    # 从service_registry获取chat服务的handlers实例
+    service_registry = getattr(http_request.app.state, 'service_registry', None)
+    chat_service = service_registry.get_service('chat') if service_registry else None
+    handlers = chat_service.handlers if chat_service else None
+    if not handlers:
+        raise BaseBusinessException(
+            code=COMMON_ERROR_REQUEST_PARSE_ERROR,
+            message="Chat服务未初始化"
+        )
+    return handlers
 
 async def _stream_wrapper(generator, trace_id: str):
     """流式响应包装器 - 返回原始chunk块"""
@@ -45,15 +56,7 @@ async def chat(request: ChatRequest, http_request: Request):
     trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
     logger.info(f"Chat request started | TraceID: {trace_id}")
     
-    # 从service_registry获取chat服务的handlers实例
-    service_registry = getattr(http_request.app.state, 'service_registry', None)
-    chat_service = service_registry.get_service('chat') if service_registry else None
-    handlers = chat_service.handlers if chat_service else None
-    if not handlers:
-        raise BaseBusinessException(
-            code=COMMON_ERROR_REQUEST_PARSE_ERROR,
-            message="Chat服务未初始化"
-        )
+    handlers = check_service_initialized(http_request)
     
     response = await handlers.chat(request, trace_id)
     
@@ -70,15 +73,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
     trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
     logger.info(f"Chat stream request started | TraceID: {trace_id}")
     
-    # 从service_registry获取chat服务的handlers实例
-    service_registry = getattr(http_request.app.state, 'service_registry', None)
-    chat_service = service_registry.get_service('chat') if service_registry else None
-    handlers = chat_service.handlers if chat_service else None
-    if not handlers:
-        raise HTTPException(
-            status_code=500,
-            detail="Chat服务未初始化"
-        )
+    handlers = check_service_initialized(http_request)
     
     # 获取流式生成器
     stream_generator = handlers.chat_stream(request, trace_id)
@@ -99,23 +94,47 @@ async def chat_stream(request: ChatRequest, http_request: Request):
 @chat_router.get("/models", response_model=BaseResponse, summary="获取可用模型")
 async def get_enabled_models(http_request: Request):
     """获取启用的模型列表"""
-    trace_id = str(uuid.uuid4())
+    trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
     logger.info(f"Get enabled models request started | TraceID: {trace_id}")
     
-    # 从service_registry获取chat服务的handlers实例
-    service_registry = getattr(http_request.app.state, 'service_registry', None)
-    chat_service = service_registry.get_service('chat') if service_registry else None
-    handlers = chat_service.handlers if chat_service else None
-    if not handlers:
-        raise BaseBusinessException(
-            code=COMMON_ERROR_REQUEST_PARSE_ERROR,
-            message="Chat服务未初始化"
-        )
+    handlers = check_service_initialized(http_request)
     
     enabled_models = handlers.get_enabled_models()
     
     logger.info(f"Get enabled models request completed | TraceID: {trace_id}")
     return BaseResponse.success(
         data={"models": enabled_models},
+        trace_id=trace_id
+    )
+
+@chat_router.post("/add-chatflow-apikey", response_model=BaseResponse, summary="增加对话流平台apikey信息")
+async def add_chatflow_apikey_info(request: AddChatFlowApiKeyRequest, http_request: Request):
+    """增加对话流平台apikey信息"""
+    trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
+    logger.info(f"Add ChatFlow API key info request started | TraceID: {trace_id}")
+    
+    handlers = check_service_initialized(http_request)
+    
+    response = handlers.add_chatflow_apikey_info(request, http_request.state.user_id, trace_id)
+    
+    logger.info(f"Add ChatFlow API key info request completed | TraceID: {trace_id}")
+    return BaseResponse.success(
+        data=response.dict(),
+        trace_id=trace_id
+    )
+
+@chat_router.get("/get-chatflow-apikey", response_model=BaseResponse, summary="获取对话流平台apikey信息列表")
+async def get_chatflow_apikey_info(http_request: Request):
+    """获取对话流平台apikey信息列表"""
+    trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
+    logger.info(f"Get ChatFlow API key info request started | TraceID: {trace_id}")
+    
+    handlers = check_service_initialized(http_request)
+    
+    response = handlers.get_chatflow_apikey_info(http_request.state.user_id, trace_id)
+    
+    logger.info(f"Get ChatFlow API key info request completed | TraceID: {trace_id}")
+    return BaseResponse.success(
+        data=response.dict(),
         trace_id=trace_id
     )

@@ -3,7 +3,7 @@ Description: AI服务平台主入口
 Author: zyq
 Date: 2025-09-29 16:06:55
 LastEditors: zyq
-LastEditTime: 2025-11-03 17:31:02
+LastEditTime: 2025-11-05 09:53:03
 '''
 import os
 from pathlib import Path
@@ -281,6 +281,6 @@ if __name__ == "__main__":
         "app:app",
         host=host,
         port=port,
-        #reload=True,
-        reload=False,
+        reload=True,
+        # reload=False,
     )

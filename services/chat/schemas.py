@@ -1,9 +1,12 @@
 '''
 Description: Chat服务数据模型
 Author: zyq
-Date: 2025-01-21
+Date: 2025-08-26 11:18:33
+LastEditors: zyq
+LastEditTime: 2025-11-05 11:23:25
 '''
 from typing import List, Optional, Dict, Any
+from datetime import datetime
 from pydantic import BaseModel, Field
 from enum import Enum
 
@@ -56,3 +59,101 @@ class ChatServiceStatus(BaseModel):
     status: str = Field(..., description="服务状态")
     enabled_endpoints: List[str] = Field(..., description="启用的端点列表")
     available_models: List[str] = Field(..., description="可用模型列表")
+    
+
+# ========================工作流/对话流相关接口适配========================
+class ChatFlowPlatform(str, Enum):
+    """对话流平台"""
+    DIFY = "dify"
+    COZE = "coze"
+
+class ApiKeyStatus(str, Enum):
+    """API Key状态枚举"""
+    ACTIVE = "active"
+    DISABLED = "disabled"
+
+class AddChatFlowApiKeyRequest(BaseModel):
+    """添加对话流API key请求模型"""
+    api_key: str = Field(..., description="对话流API key", min_length=1)
+    chatflow_name: str = Field(..., description="对话流名称", min_length=1)
+    platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
+    description: Optional[str] = Field(None, description="备注说明")
+
+class AddChatFlowApiKeyResponse(BaseModel):
+    """添加对话流API key响应模型"""
+    key_id: str = Field(..., description="API key记录ID")
+
+class ChatFlowApiKeyInfo(BaseModel):
+    """对话流API key信息模型"""
+    key_id: str = Field(..., description="记录ID")
+    user_id: str = Field(..., description="所属用户ID")
+    chatflow_name: str = Field(..., description="对话流名称")
+    platform: ChatFlowPlatform = Field(default=ChatFlowPlatform.DIFY, description="对话流平台")
+    api_key: str = Field(..., description="实际的API key")
+    description: Optional[str] = Field(None, description="备注说明")
+    status: ApiKeyStatus = Field(default=ApiKeyStatus.ACTIVE, description="状态")
+    created_at: datetime = Field(default=datetime.utcnow, description="创建时间")
+
+class GetChatFlowApiKeyResponse(BaseModel):
+    """查询对话流API key响应模型"""
+    api_keys_info: List[ChatFlowApiKeyInfo] = Field(default=[], description="对话流API key信息列表")
+
+class ChatFlowResponseMode(str, Enum):
+    """对话流响应模式枚举"""
+    BLOCK = "block"
+    STREAM = "stream"
+
+# ========================兼容dify的数据模型========================
+class DifyChatFlowFileTransferMethod(str, Enum):
+    """Dify对话流文件传输方式枚举"""
+    LOCAL_FILE = "local_file"
+    URL = "remote_url"
+
+class DifyResponseMode(str, Enum):
+    """Dify响应模式枚举"""
+    BLOCK = "blocking"
+    STREAM = "streaming"
+
+class DifyChatFlowFileInfo(BaseModel):
+    """对话流文件信息模型"""
+    transfor_method: DifyChatFlowFileTransferMethod = Field(DifyChatFlowFileTransferMethod.LOCAL_FILE, description="文件传输方式")
+    type: str = Field(..., description="文件类型")
+    upload_file_id: Optional[str] = Field(None, description="上传的文件id, 仅当传输方式为local_file时填入")
+    url: Optional[str] = Field(None, description="文件url, 仅当传输方式为remote_url时填入")
+    
+
+class DifyChatFlowRequest(BaseModel):
+    """dify对话流请求模型, 不对外"""
+    query: str = Field(..., description="用户的问题", min_length=1)
+    chatflow_name: str = Field(..., description="对话流名称", min_length=1)
+    inputs: dict = Field(default={}, description="输入参数")
+    response_mode: DifyResponseMode = Field(DifyResponseMode.STREAM, description="响应模式, 默认流式")
+    files: Optional[List[DifyChatFlowFileInfo]] = Field(None, description="上传的文件列表")
+
+# ========================兼容dify数据模型========================
+
+class ChatFlowRequest(BaseModel):
+    """对话流请求模型(统一dify/coze)"""
+    query: str = Field(..., description="用户的问题", min_length=1)
+    chatflow_name: str = Field(..., description="对话流名称", min_length=1)
+    platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
+    inputs: dict = Field(default={}, description="输入参数")
+    response_mode: ChatFlowResponseMode = Field(ChatFlowResponseMode.STREAM, description="响应模式, 默认流式")
+    files: Optional[List[Any]] = Field(None, description="上传的文件列表")
+
+class UploadFilesToChatFlowPlatformRequest(BaseModel):
+    """上传文件到对话流平台请求模型"""
+    platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
+    user: str = Field(..., description="用户标识")
+
+class UploadFilesToChatFlowPlatformResponse(BaseModel):
+    """上传文件到对话流平台响应模型"""
+    file_info_list: List[Dict] = Field([], description="文件ID列表")
+
+class StopChatTaskRequest(BaseModel):
+    """停止对话任务请求模型"""
+    platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
+    task_id: str = Field(..., description="任务ID")
+    user: str = Field(..., description="用户标识")
+
+# ========================工作流/对话流相关接口适配========================

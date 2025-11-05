@@ -23,6 +23,9 @@ services:
     rate_limits:
       chat_completion: 1000      # 每小时请求限制
       chat_completion_stream: 800  # 流式对话限制更严格
+    # mongodb配置
+    chat_db_name: "ai_backend_services_chat"
+    chat_apikey_collection_name: "chat_apikey" # 存储各chatflow平台的API Key
 
   # 文档处理服务配置
   document:

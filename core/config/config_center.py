@@ -3,7 +3,7 @@ Description: 全局配置中心, 业务无关
 Author: zyq
 Date: 2025-07-29 17:50:05
 LastEditors: zyq
-LastEditTime: 2025-10-11 10:31:40
+LastEditTime: 2025-11-05 09:16:50
 '''
 import yaml
 import os
@@ -84,7 +84,8 @@ class ChatConfig(BaseServiceConfig):
     """Chat服务配置"""
     enabled_models: List[str] = Field(default_factory=list, description="启用的模型列表")
     rate_limits: Dict[str, int] = Field(default_factory=dict, description="限流配置")
-
+    chat_db_name: str = Field("ai_backend_services_chat", description="数据库名")
+    chat_apikey_collection_name: str = Field("chat_apikey", description="存储各chatflow平台的API Key")
 
 class DocumentConfig(BaseServiceConfig):
     """Document服务配置"""

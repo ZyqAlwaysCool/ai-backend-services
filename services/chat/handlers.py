@@ -3,10 +3,12 @@ Description: 对话类服务业务逻辑处理器
 Author: zyq
 Date: 2025-08-26 11:19:24
 LastEditors: zyq
-LastEditTime: 2025-09-19 14:55:34
+LastEditTime: 2025-11-05 09:54:05
 '''
 from typing import Dict, Any, AsyncGenerator, List
 from loguru import logger
+import uuid
+from datetime import datetime
 
 from core.config import load_llm_cfg
 from core.config.error_codes import COMMON_ERROR_REQUEST_PARSE_ERROR
@@ -15,9 +17,15 @@ from .schemas import (
     ChatRequest,
     ChatResponse, 
     StreamChatChunk,
-    MessageRole
+    MessageRole,
+    ChatFlowApiKeyInfo,
+    AddChatFlowApiKeyRequest,
+    AddChatFlowApiKeyResponse,
+    GetChatFlowApiKeyResponse,
+    ApiKeyStatus,
 )
 from .adapters import ProtocolAdapterFactory, LLMProtocolAdapter
+from core.storage.mongo_storage import MongoStorage
 
 
 class ChatHandlers:
@@ -34,6 +42,10 @@ class ChatHandlers:
         
         # 协议适配器缓存
         self._adapters = {}
+        
+        # 初始化存储器
+        self._chatflow_apikey_storage = MongoStorage(db_name=config.get("chat_db_name", "ai_backend_services_chat"),
+                                                     collection_name=config.get("chat_apikey_collection_name", "chat_apikey"))
         
     
     async def initialize(self):
@@ -185,3 +197,51 @@ class ChatHandlers:
     def get_enabled_models(self) -> List[str]:
         """获取启用的模型列表"""
         return self.enabled_models.copy()
+    
+    def add_chatflow_apikey_info(self, request: AddChatFlowApiKeyRequest, user_id: str, trace_id: str = None) -> AddChatFlowApiKeyResponse:
+        """添加对话流API key信息"""
+        logger.info(f"add chatflow apikey info - TraceID: {trace_id}")
+        filter = {"user_id": user_id, "chatflow_name": request.chatflow_name, "platform": request.platform, "api_key": request.api_key}
+        exist_records = self._chatflow_apikey_storage.find_record(filter)
+        if len(exist_records) > 0:
+            raise ValidationException("已存在相同的API key记录")
+        
+        real_key_id = "chatflow_apikey_" + str(uuid.uuid4())[:8]
+        apikey_info = ChatFlowApiKeyInfo(
+            key_id=real_key_id,
+            user_id=user_id,
+            chatflow_name=request.chatflow_name,
+            platform=request.platform,
+            api_key=request.api_key,
+            description=request.description,
+            status=ApiKeyStatus.ACTIVE,
+            created_at=datetime.utcnow(),
+        )
+        
+        self._chatflow_apikey_storage.create_record(apikey_info.model_dump())
+        
+        return AddChatFlowApiKeyResponse(
+            key_id=real_key_id,
+        )
+    
+    def get_chatflow_apikey_info(self, user_id: str, trace_id: str = None) -> GetChatFlowApiKeyResponse:
+        """获取用户的对话流API key信息列表"""
+        logger.info(f"get chatflow apikey info - TraceID: {trace_id}")
+        records = self._chatflow_apikey_storage.find_record({"user_id": user_id})
+        if len(records) == 0:
+            return GetChatFlowApiKeyResponse()
+        
+        resp = GetChatFlowApiKeyResponse()
+        for record in records:
+            if record["status"] == ApiKeyStatus.ACTIVE:
+                chatflow_apikey_info = ChatFlowApiKeyInfo(**record)
+                resp.api_keys_info.append(chatflow_apikey_info)
+        
+        return resp
+                
+
+        
+        
+        
+        
+        

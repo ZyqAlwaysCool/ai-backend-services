@@ -3,7 +3,7 @@ Description: 全局异常处理和自定义异常定义
 Author: zyq
 Date: 2025-08-13 14:30:00
 LastEditors: zyq
-LastEditTime: 2025-08-26 17:13:41
+LastEditTime: 2025-11-05 10:05:18
 '''
 from typing import Any, Dict, Optional
 from fastapi import Request, HTTPException
@@ -115,7 +115,7 @@ async def business_exception_handler(request: Request, exc: BaseBusinessExceptio
     """业务异常处理器"""
     trace_id = getattr(request.state, 'trace_id', generate_trace_id())
     
-    logger.warning(
+    logger.error(
         f"Business exception - TraceID: {trace_id} | "
         f"Path: {request.url.path} | "
         f"Code: {exc.code} | "
