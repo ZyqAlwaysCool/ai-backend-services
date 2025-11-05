@@ -3,7 +3,7 @@ Description: Chat服务数据模型
 Author: zyq
 Date: 2025-08-26 11:18:33
 LastEditors: zyq
-LastEditTime: 2025-11-05 11:23:25
+LastEditTime: 2025-11-05 17:48:39
 '''
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -122,29 +122,36 @@ class DifyChatFlowFileInfo(BaseModel):
     url: Optional[str] = Field(None, description="文件url, 仅当传输方式为remote_url时填入")
     
 
-class DifyChatFlowRequest(BaseModel):
-    """dify对话流请求模型, 不对外"""
-    query: str = Field(..., description="用户的问题", min_length=1)
-    chatflow_name: str = Field(..., description="对话流名称", min_length=1)
-    inputs: dict = Field(default={}, description="输入参数")
-    response_mode: DifyResponseMode = Field(DifyResponseMode.STREAM, description="响应模式, 默认流式")
-    files: Optional[List[DifyChatFlowFileInfo]] = Field(None, description="上传的文件列表")
+# class DifyChatFlowRequest(BaseModel):
+#     """dify对话流请求模型, 不对外"""
+#     query: str = Field(..., description="用户的问题", min_length=1)
+#     chatflow_name: str = Field(..., description="对话流名称", min_length=1)
+#     inputs: dict = Field(default={}, description="输入参数")
+#     response_mode: DifyResponseMode = Field(DifyResponseMode.STREAM, description="响应模式, 默认流式")
+#     files: Optional[List[DifyChatFlowFileInfo]] = Field(None, description="上传的文件列表")
 
 # ========================兼容dify数据模型========================
+
+class UploadFileInfo(BaseModel):
+    """上传文件信息模型"""
+    file_name: str = Field(..., description="文件名称")
+    file_id: str = Field(..., description="文件ID")
 
 class ChatFlowRequest(BaseModel):
     """对话流请求模型(统一dify/coze)"""
     query: str = Field(..., description="用户的问题", min_length=1)
     chatflow_name: str = Field(..., description="对话流名称", min_length=1)
     platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
+    platform_user: str = Field(default="test_user_1", description="平台用户标识")
     inputs: dict = Field(default={}, description="输入参数")
     response_mode: ChatFlowResponseMode = Field(ChatFlowResponseMode.STREAM, description="响应模式, 默认流式")
-    files: Optional[List[Any]] = Field(None, description="上传的文件列表")
+    files: Optional[List[UploadFileInfo]] = Field(None, description="上传的文件列表")
 
 class UploadFilesToChatFlowPlatformRequest(BaseModel):
     """上传文件到对话流平台请求模型"""
     platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
     user: str = Field(..., description="用户标识")
+    chatflow_name: str = Field(..., description="对话流名称", min_length=1)
 
 class UploadFilesToChatFlowPlatformResponse(BaseModel):
     """上传文件到对话流平台响应模型"""

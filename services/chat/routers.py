@@ -3,18 +3,28 @@ Description: Chat服务API路由定义
 Author: zyq
 Date: 2025-09-03 18:29:16
 LastEditors: zyq
-LastEditTime: 2025-11-05 11:26:15
+LastEditTime: 2025-11-05 17:51:06
 '''
 
 import uuid
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, File, UploadFile, Form
 from fastapi.responses import StreamingResponse
 from loguru import logger
+from typing import List
 
 from core.schemas.base_resp_model_define import BaseResponse
 from core.config.error_codes import *
 from core.exceptions import ValidationException, BaseBusinessException
-from .schemas import ChatRequest, AddChatFlowApiKeyRequest
+from .schemas import (
+    ChatRequest, 
+    AddChatFlowApiKeyRequest,
+    ChatFlowRequest,
+    UploadFilesToChatFlowPlatformRequest,
+    UploadFilesToChatFlowPlatformResponse,
+    StopChatTaskRequest,
+    ChatFlowPlatform,
+    ChatFlowResponseMode,
+)
 from .handlers import ChatHandlers
 
 
@@ -136,5 +146,75 @@ async def get_chatflow_apikey_info(http_request: Request):
     logger.info(f"Get ChatFlow API key info request completed | TraceID: {trace_id}")
     return BaseResponse.success(
         data=response.dict(),
+        trace_id=trace_id
+    )
+
+@chat_router.post("/chatflow", summary="对话流平台请求")
+async def chatflow(request: ChatFlowRequest, http_request: Request):
+    """对话流平台请求接口"""
+    trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
+    logger.info(f"ChatFlow request started | TraceID: {trace_id}")
+    
+    handlers = check_service_initialized(http_request)
+    
+    logger.info(f"ChatFlow request completed | TraceID: {trace_id}")
+
+    if request.response_mode == ChatFlowResponseMode.STREAM:
+        # 流式响应处理
+        return BaseResponse.success(
+            data="streaming response initiated",
+            trace_id=trace_id
+        )
+    
+    else:
+        # 非流式响应处理
+        response = handlers.chatflow_block_mode(request, http_request.state.user_id, trace_id)
+    
+        return BaseResponse.success(
+            data=response.dict(),
+            trace_id=trace_id
+        )
+
+@chat_router.post("/upload-files-chatflow-platform", response_model=BaseResponse, summary="上传文件到对话流平台")
+async def upload_files_to_chatflow_platform(
+    http_request: Request,
+    platform: str = Form(default=ChatFlowPlatform.DIFY, description="对话流平台"),
+    platform_user: str = Form(..., description="平台用户标识"),
+    chatflow_name: str = Form(..., description="对话流名称"),
+    files: List[UploadFile] = File(..., description="文件列表")):
+    """上传文件到对话流平台接口"""
+    trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
+    logger.info(f"Upload files to ChatFlow platform request started | TraceID: {trace_id}")
+
+    handlers = check_service_initialized(http_request)
+
+    # 构建请求对象
+    request = UploadFilesToChatFlowPlatformRequest(
+        platform=platform,
+        user=platform_user,
+        chatflow_name=chatflow_name
+    )
+
+    # 调用handler处理文件上传
+    response = await handlers.upload_files_to_chatflow_platform(request, http_request.state.user_id, files, trace_id)
+
+    logger.info(f"Upload files to ChatFlow platform request completed | TraceID: {trace_id}")
+    return BaseResponse.success(
+        data=response.dict(),
+        trace_id=trace_id
+    )
+
+@chat_router.post("/stop-chatflow-task", response_model=BaseResponse, summary="停止对话流任务")
+async def stop_chatflow_task(request: StopChatTaskRequest, http_request: Request):
+    """停止对话流任务接口"""
+    trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
+    logger.info(f"Stop ChatFlow task request started | TraceID: {trace_id}")
+    
+    handlers = check_service_initialized(http_request)
+    
+    logger.info(f"Stop ChatFlow task request completed | TraceID: {trace_id}")
+    
+    return BaseResponse.success(
+        data="test22",
         trace_id=trace_id
     )

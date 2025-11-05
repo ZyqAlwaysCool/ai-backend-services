@@ -3,29 +3,24 @@ Description: 对话类服务业务逻辑处理器
 Author: zyq
 Date: 2025-08-26 11:19:24
 LastEditors: zyq
-LastEditTime: 2025-11-05 09:54:05
+LastEditTime: 2025-11-05 17:51:48
 '''
+from fastapi import UploadFile
 from typing import Dict, Any, AsyncGenerator, List
 from loguru import logger
 import uuid
 from datetime import datetime
+import tempfile
+from pathlib import Path
 
-from core.config import load_llm_cfg
+from core.config import load_llm_cfg, get_app_config
 from core.config.error_codes import COMMON_ERROR_REQUEST_PARSE_ERROR
 from core.exceptions import ValidationException, BaseBusinessException
-from .schemas import (
-    ChatRequest,
-    ChatResponse, 
-    StreamChatChunk,
-    MessageRole,
-    ChatFlowApiKeyInfo,
-    AddChatFlowApiKeyRequest,
-    AddChatFlowApiKeyResponse,
-    GetChatFlowApiKeyResponse,
-    ApiKeyStatus,
-)
+from .schemas import *
 from .adapters import ProtocolAdapterFactory, LLMProtocolAdapter
 from core.storage.mongo_storage import MongoStorage
+from core.workflow_clients.dify_client import DifyClient
+import os
 
 
 class ChatHandlers:
@@ -35,17 +30,24 @@ class ChatHandlers:
         self.config = config
         self.enabled_models = config.get('enabled_models', [])
         self.rate_limits = config.get('rate_limits', {})
-        
+
         # 加载LLM配置
         self.llm_config = load_llm_cfg("openai")
         self.models_info = {model.name: model for model in self.llm_config.models}
-        
+
+        # 加载应用配置
+        self.app_config = get_app_config()
+
         # 协议适配器缓存
         self._adapters = {}
-        
+
         # 初始化存储器
         self._chatflow_apikey_storage = MongoStorage(db_name=config.get("chat_db_name", "ai_backend_services_chat"),
                                                      collection_name=config.get("chat_apikey_collection_name", "chat_apikey"))
+
+        # 额外的配置初始化, 后续可迁移到services.yml中
+        self.__chatflow_uploadfiles_limit = 5  # 单次上传文件数量上限
+        self.__chatflow_singlefile_maxsize = 30 * 1024 * 1024  # 单个文件最大大小限制(MB)
         
     
     async def initialize(self):
@@ -80,6 +82,20 @@ class ChatHandlers:
             raise ValidationException(
                 f"模型 {model} 不可用。可用模型: {', '.join(self.enabled_models)}"
             )
+    
+    def _get_dify_chatflow_apikey_info(self, user_id: str, chatflow_name: str) -> Dict[str, Any]:
+        filter_query = {
+            "user_id": user_id,
+            "chatflow_name": chatflow_name,
+            "platform": ChatFlowPlatform.DIFY,
+            "status": ApiKeyStatus.ACTIVE
+        }
+        records = self._chatflow_apikey_storage.find_record(filter_query)
+        if len(records) == 0 or len(records) > 1:
+            raise ValidationException(
+                f"未找到用户 {user_id} 在DIFY平台的对话流 {chatflow_name} 的有效API Key"
+            )
+        return records[0]
     
     def _validate_request_params(self, temperature: float = None, max_tokens: int = None):
         """验证请求参数"""
@@ -197,6 +213,8 @@ class ChatHandlers:
     def get_enabled_models(self) -> List[str]:
         """获取启用的模型列表"""
         return self.enabled_models.copy()
+
+# ========================工作流/对话流相关接口适配========================
     
     def add_chatflow_apikey_info(self, request: AddChatFlowApiKeyRequest, user_id: str, trace_id: str = None) -> AddChatFlowApiKeyResponse:
         """添加对话流API key信息"""
@@ -238,7 +256,148 @@ class ChatHandlers:
                 resp.api_keys_info.append(chatflow_apikey_info)
         
         return resp
-                
+    
+    async def upload_files_to_chatflow_platform(self,
+                                                request: UploadFilesToChatFlowPlatformRequest,
+                                                login_user: str, #鉴权用户
+                                                files: List[UploadFile],
+                                                trace_id: str = None) -> UploadFilesToChatFlowPlatformResponse:
+        """上传文件到对话流平台"""
+        logger.info(f"upload files to chatflow platform - TraceID: {trace_id}")
+
+        # 验证文件数量
+        if len(files) > self.__chatflow_uploadfiles_limit:
+            raise ValidationException(f"单次上传文件数量不能超过{self.__chatflow_uploadfiles_limit}个")
+
+        # 目前只支持Dify平台
+        if request.platform != ChatFlowPlatform.DIFY:
+            raise ValidationException(f"暂不支持平台: {request.platform}")
+
+        # 从数据库获取指定chatflow的API Key
+        filter_query = {
+            "user_id": login_user,
+            "chatflow_name": request.chatflow_name,
+            "platform": request.platform,
+            "status": ApiKeyStatus.ACTIVE
+        }
+        apikey_records = self._chatflow_apikey_storage.find_record(filter_query)
+
+        if len(apikey_records) == 0:
+            raise ValidationException(
+                f"未找到用户 {request.user} 在平台 {request.platform} 的对话流 {request.chatflow_name} 的有效API Key"
+            )
+
+        # 使用查询到的API Key
+        api_key = apikey_records[0]["api_key"]
+        logger.info(f"found api key for user={login_user} records={apikey_records[0]}")
+
+        # 获取Dify平台URL
+        dify_url = self.app_config.dify_url
+        logger.info(f"dify url from config: {dify_url}")
+
+        # 创建DifyClient实例
+        dify_client = DifyClient(
+            dify_url=dify_url,
+            access_api_key=api_key,
+            workflow_name=request.chatflow_name,
+            user_id=request.user,
+            timeout=120
+        )
+
+        # 存储上传结果
+        uploaded_files_info = []
+        temp_file_paths = []
+
+        try:
+            # 处理每个文件
+            for file in files:
+                # 读取文件内容用于大小校验
+                content = await file.read()
+                file_size = len(content)
+
+                # 校验文件大小
+                if file_size > self.__chatflow_singlefile_maxsize:
+                    raise ValidationException(
+                        f"文件 {file.filename} 超过最大允许大小 {self.__chatflow_singlefile_maxsize / (1024 * 1024)} MB"
+                    )
+
+                # 创建临时文件
+                with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename).suffix) as temp_file:
+                    temp_file.write(content)
+                    temp_file_path = temp_file.name
+                    temp_file_paths.append(temp_file_path)
+
+                logger.info(f"temp file created: {temp_file_path} for original file: {file.filename}")
+
+                # 调用DifyClient上传文件
+                try:
+                    file_info = await dify_client.upload_file(file_path=temp_file_path, user=request.user)
+                    file_info["file_name"] = file.filename # 保留原始文件名信息
+                    uploaded_files_info.append(file_info)
+                    logger.info(f"file uploaded successfully: {file.filename} -> file_id={file_info.get('id')}")
+
+                except Exception as e:
+                    logger.error(f"failed to upload file {file.filename}: {str(e)}")
+                    raise ValidationException(f"文件 {file.filename} 上传失败: {str(e)}")
+
+        finally:
+            # 清理所有临时文件
+            for temp_path in temp_file_paths:
+                try:
+                    if os.path.exists(temp_path):
+                        os.unlink(temp_path)
+                        logger.info(f"temp file cleaned: {temp_path}")
+                except Exception as e:
+                    logger.warning(f"failed to clean temp file {temp_path}: {str(e)}")
+
+        return UploadFilesToChatFlowPlatformResponse(file_info_list=uploaded_files_info)
+    
+    def chatflow_block_mode(self, request: ChatFlowRequest, login_user: str, trace_id: str = None):
+        """对话流平台阻塞模式处理"""
+        
+        if request.platform == ChatFlowPlatform.DIFY:
+            dify_files = []
+            if request.files:
+                document_exts = {
+                    'TXT', 'MD', 'MARKDOWN', 'MDX', 'PDF', 'HTML', 'XLSX', 'XLS',
+                    'VTT', 'PROPERTIES', 'DOC', 'DOCX', 'CSV', 'EML', 'MSG',
+                    'PPTX', 'PPT', 'XML', 'EPUB'
+                }
+                for file_info in request.files:
+                    suffix = Path(file_info.file_name).suffix
+                    ext_upper = suffix.lstrip('.').upper() if suffix else ""
+                    file_type = "document" if ext_upper in document_exts else "image"
+                    dify_chatflow_file_info = DifyChatFlowFileInfo(
+                        upload_file_id=file_info.file_id,
+                        type=file_type,
+                        transfor_method=DifyChatFlowFileTransferMethod.LOCAL_FILE
+                    )
+                    dify_files.append(dify_chatflow_file_info.model_dump())
+            
+            # 调用DifyClient执行阻塞对话流
+            dify_api_key = self._get_dify_chatflow_apikey_info(
+                user_id=login_user,
+                chatflow_name=request.chatflow_name
+            )["api_key"]
+
+            dify_client = DifyClient(
+                dify_url=self.app_config.dify_url,
+                access_api_key=dify_api_key,
+                workflow_name=request.chatflow_name,
+                user_id=request.platform_user,
+                timeout=120,
+            )
+            
+            resp = dify_client.execute_chatflow_block(request.query, inputs=request.inputs, files=dify_files)
+            return resp
+
+        else:
+            raise ValidationException(f"暂不支持平台: {request.platform}")
+    
+    async def chatflow_stream_mode(self, request: ChatFlowRequest, trace_id: str = None):
+        """对话流平台流式模式处理"""
+        return "success chatflow stream mode"
+# ========================工作流/对话流相关接口适配========================
 
         
         

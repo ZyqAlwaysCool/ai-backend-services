@@ -3,7 +3,7 @@ Description: 全局配置中心, 业务无关
 Author: zyq
 Date: 2025-07-29 17:50:05
 LastEditors: zyq
-LastEditTime: 2025-11-05 09:16:50
+LastEditTime: 2025-11-05 16:01:17
 '''
 import yaml
 import os
@@ -64,7 +64,8 @@ class AppConfig(BaseModel):
     embedding_model_path: str = Field("models/Qwen3-Embedding-0___6B", description="Embedding模型路径(相对于项目根目录)")
     embedding_batch_size: int = Field(8, description="Embedding批处理大小", ge=1, le=128)
     embedding_device: str = Field("cpu", description="Embedding模型运行设备(cpu/cuda/cuda:0/cuda:1等)")
-    
+    dify_url: str = Field("http://172.16.32.88:8891/v1", description="Dify平台URL")
+
     class Config:
         frozen = True
 
@@ -323,6 +324,7 @@ def load_app_config() -> AppConfig:
         config_dict['embedding_model_path'] = os.getenv('EMBEDDING_MODEL_PATH', config_dict.get('embedding_model_path', 'models/Qwen3-Embedding-4B'))
         config_dict['embedding_batch_size'] = int(os.getenv('EMBEDDING_BATCH_SIZE', config_dict.get('embedding_batch_size', 8)))
         config_dict['embedding_device'] = os.getenv('EMBEDDING_DEVICE', config_dict.get('embedding_device', 'cpu'))
+        config_dict['dify_url'] = os.getenv('DIFY_URL', config_dict.get('dify_url', 'http://172.16.32.88:8891/v1'))
         
         return AppConfig(**config_dict)
     except Exception as e:
