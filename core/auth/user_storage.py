@@ -3,7 +3,7 @@ Description: 认证用户存储服务
 Author: zyq
 Date: 2025-08-22 14:53:36
 LastEditors: zyq
-LastEditTime: 2025-09-18 09:09:19
+LastEditTime: 2025-11-06 14:58:46
 '''
 import hashlib
 import secrets
@@ -46,7 +46,7 @@ class AuthUserStorage:
             return False
     
     def create_user(self, business_name: str, permissions: List[str]) -> Tuple[AuthUser, str]:
-        """创建用户 - 仅供脚本使用"""
+        """创建用户"""
         try:
             # 生成用户名格式: {业务名}_auth_user
             username = f"{business_name}_auth_user"

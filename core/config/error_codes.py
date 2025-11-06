@@ -38,6 +38,8 @@ AUTH_ERROR_AUTH_FAILED = -10401  # 鉴权失败
 AUTH_ERROR_LOGIN_FAILED = -10402  # 登录失败
 AUTH_ERROR_INVALID_TOKEN = -10403  # 无效的token
 AUTH_ERROR_VERIFY_TOKEN_FAILED = -10404 # token验证失败
+AUTH_ERROR_USER_ALREADY_EXISTS = -10405  # 用户已存在
+AUTH_ERROR_REGISTER_FAILED = -10406  # 注册失败
 AUTH_ERROR_END = -10499
 
 
@@ -61,6 +63,8 @@ def get_error_message(code: int) -> str:
         AUTH_ERROR_LOGIN_FAILED: "登录失败",
         AUTH_ERROR_INVALID_TOKEN: "无效的token或已过期",
         AUTH_ERROR_VERIFY_TOKEN_FAILED: "token验证失败",
+        AUTH_ERROR_USER_ALREADY_EXISTS: "用户已存在",
+        AUTH_ERROR_REGISTER_FAILED: "注册失败",
         COMMON_ERROR_SERVICE_INIT_FAILED: "服务初始化失败",
     }
     return error_messages.get(code, "未知错误")

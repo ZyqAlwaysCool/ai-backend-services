@@ -14,6 +14,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self.public_paths = {
             "/auth/login",
             "/auth/verify", 
+            "/auth/register",
             "/health",
             "/",
             "/docs",

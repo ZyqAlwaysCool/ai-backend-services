@@ -3,7 +3,7 @@ Description: AI服务平台主入口
 Author: zyq
 Date: 2025-09-29 16:06:55
 LastEditors: zyq
-LastEditTime: 2025-11-05 09:53:03
+LastEditTime: 2025-11-06 15:20:02
 '''
 import os
 from pathlib import Path
@@ -171,11 +171,12 @@ def custom_openapi():
     public_paths = {
         "/auth/login",
         "/auth/verify", 
+        "/auth/register",
         "/health",
         "/",
         "/docs",
         "/openapi.json",
-        "/redoc"
+        "/redoc",
     }
     
     # 为所有需要认证的接口添加安全要求
@@ -281,6 +282,6 @@ if __name__ == "__main__":
         "app:app",
         host=host,
         port=port,
-        reload=True,
-        # reload=False,
+        #reload=True,
+        reload=False,
     )

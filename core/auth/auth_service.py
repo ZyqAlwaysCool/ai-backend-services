@@ -18,11 +18,37 @@ class AuthService:
         self.secret_key = secret_key
         self.token_expire_hours = token_expire_hours
         self.user_storage: Optional[AuthUserStorage] = None
-    
+
     def set_user_storage(self, user_storage: AuthUserStorage):
         """设置用户存储服务"""
         self.user_storage = user_storage
-    
+
+    def register(self, business_name: str) -> tuple[Optional[AuthUser], Optional[str], Optional[str]]:
+        """
+        用户注册
+        返回: (user, password, error_message)
+        - 成功: (user, password, None)
+        - 用户已存在: (None, None, "用户已存在")
+        - 其他错误: (None, None, "注册失败")
+        """
+        if not self.user_storage:
+            logger.error("User storage not initialized")
+            return None, None, "系统错误"
+
+        try:
+            # 默认给予全部权限
+            permissions = ["*"]
+            user, password = self.user_storage.create_user(business_name, permissions)
+            logger.info(f"User registered successfully: {user.username}")
+            return user, password, None
+        except ValueError as e:
+            # 用户已存在
+            logger.warning(f"User registration failed: {str(e)}")
+            return None, None, str(e)
+        except Exception as e:
+            logger.error(f"User registration error: {str(e)}")
+            return None, None, "注册失败"
+
     def authenticate(self, username: str, password: str) -> Optional[TokenResponse]:
         """用户认证"""
         if not self.user_storage:

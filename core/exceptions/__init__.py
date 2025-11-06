@@ -1,7 +1,9 @@
 '''
-Description: 异常处理模块
+Description: y异常处理模块
 Author: zyq
-Date: 2025-01-21
+Date: 2025-08-21 15:42:15
+LastEditors: zyq
+LastEditTime: 2025-11-06 17:13:50
 '''
 from .exceptions import (
     BaseBusinessException,

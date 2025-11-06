@@ -4,7 +4,7 @@ services:
   enabled:
     - chat
     - document
-    - retrieval
+    # - retrieval
     # - multimodal  # 暂未启用
 
   # Chat服务配置 - 提供对话相关接口

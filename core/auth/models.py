@@ -30,6 +30,18 @@ class LoginRequest(BaseModel):
     username: str = Field(..., description="用户名")
     password: str = Field(..., description="密码")
 
+class RegisterRequest(BaseModel):
+    """注册请求"""
+    business_name: str = Field(..., description="业务名称 (将生成格式: {business_name}_auth_user)")
+
+class RegisterResponse(BaseModel):
+    """注册响应"""
+    user_id: str = Field(..., description="用户ID")
+    username: str = Field(..., description="用户名")
+    password: str = Field(..., description="系统生成的密码（仅显示一次，请妥善保管）")
+    created_at: datetime = Field(..., description="创建时间")
+    permissions: List[str] = Field(default=[], description="权限列表")
+
 class TokenResponse(BaseModel):
     """Token响应"""
     access_token: str

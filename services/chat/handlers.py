@@ -3,7 +3,7 @@ Description: 对话类服务业务逻辑处理器
 Author: zyq
 Date: 2025-08-26 11:19:24
 LastEditors: zyq
-LastEditTime: 2025-11-06 10:37:43
+LastEditTime: 2025-11-06 17:17:16
 '''
 from fastapi import UploadFile
 from typing import Dict, Any, AsyncGenerator, List
@@ -16,7 +16,7 @@ import asyncio
 
 from core.config import load_llm_cfg, get_app_config
 from core.config.error_codes import COMMON_ERROR_REQUEST_PARSE_ERROR
-from core.exceptions import ValidationException, BaseBusinessException
+from core.exceptions import ValidationException, BaseBusinessException, WorkflowException
 from .schemas import *
 from .adapters import ProtocolAdapterFactory, LLMProtocolAdapter
 from core.storage.mongo_storage import MongoStorage
