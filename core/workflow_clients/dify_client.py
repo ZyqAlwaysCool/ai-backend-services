@@ -3,7 +3,7 @@ Description: 通用dify http client, 封装dify的后台api接口
 Author: zyq
 Date: 2025-07-29 17:51:12
 LastEditors: zyq
-LastEditTime: 2025-11-05 17:57:21
+LastEditTime: 2025-11-06 10:49:57
 '''
 import yaml
 from pathlib import Path
@@ -15,6 +15,7 @@ import json
 import os
 import asyncio
 import mimetypes
+from deprecated import deprecated
 
 from .base_workflow import BaseWorkflowClient, WorkflowType, WorkflowResponse, WorkflowStatus
 from ..exceptions import WorkflowException
@@ -59,6 +60,7 @@ class DifyClient(BaseWorkflowClient):
         
         logger.info(f"dify client init success. workflow_name=({self.workflow_name}) url=({self._base_url})")
     
+    @deprecated(version="1.0", reason="此方法已废弃, 请使用 chat_sse 或 chat_sse_raw 方法")
     async def __async_request_for_stream_chat(self, url: str, headers: dict, payload: dict, is_split_think: bool=True) -> DifyClientResp:
         """异步http请求封装. 目前与dify流式返回业务信息耦合"""
         logger.info(f"start async request for stream chat. workflow_name=({self.workflow_name}) url=({url}) headers=({headers}) payload=({payload})")
@@ -104,7 +106,7 @@ class DifyClient(BaseWorkflowClient):
                        data: Any=None, 
                        files: Any=None) -> httpx.Response:
         """通用同步http请求封装"""
-        logger.info(f"start sync request. url=({url}) headers=({headers}) method=({method}) params=({params}) data=({data})")
+        logger.info(f"start sync request. url=({url}) headers=({headers}) method=({method}) params=({params}) data=({data}) json=({json})")
         with httpx.Client(timeout=self.sync_req_timeout) as client:
             response = client.request(method.upper(), url, headers=headers, params=params, json=json, data=data, files=files)
             response.raise_for_status()
@@ -142,10 +144,8 @@ class DifyClient(BaseWorkflowClient):
             if not stream:
                 await response.aread()  # 一次性读完整 body
             return response
-        
-        
-        
     
+    @deprecated(version="1.0", reason="此流式对话方法已废弃, 请使用 chat_sse 或 chat_sse_raw 方法")
     async def stream_chat(self, query: str, inputs: dict={}, is_split_think: bool=True) -> DifyClientResp:
         """流式对话"""
         logger.info(f"start stream chat. query=({query})")
@@ -186,7 +186,7 @@ class DifyClient(BaseWorkflowClient):
         try:
             response = self.__sync_request(url=url, method="POST", headers=headers, json=payload)
         except httpx.HTTPStatusError as e:
-            logger.error(f"execute chatflow failed. error: {str(e)}")
+            logger.error(f"execute chatflow failed. error: {str(e)} dify_response: {e.response.text if hasattr(e, 'response') else 'N/A'}")
             return DifyClientResp.error(msg=str(e))
         
         return DifyClientResp.success(data=response.json())
@@ -247,29 +247,32 @@ class DifyClient(BaseWorkflowClient):
         logger.info(f"get task status. workflow_name=({self.workflow_name})")
         return self._dify_current_task_status
     
-    async def stop_current_task(self) ->DifyClientResp:
+    async def stop_task(self, task_id: str="") ->DifyClientResp:
         """终止当前运行的dify任务"""
-        logger.info(f"start stop current task. workflow_name=({self.workflow_name}) task_id=({self._dify_task_id})")
-        if self._dify_task_id:
-            url = f"{self._base_url}/chat-messages/{self._dify_task_id}/stop"
-            data = {
-                "user": self._dify_user_id,
-            }
-            try:
-                resp = await self.__async_request(url=url, method="POST", data=data)
-                logger.info(f"stop task resp: {resp}")
-            except httpx.HTTPStatusError as e:
-                logger.error(f"stop current task failed. error: {str(e)}")
-                return DifyClientResp.error(msg=str(e))
-            logger.info(f"stop current task. workflow_name=({self.workflow_name}) task_id=({self._dify_task_id})")
-        else:
-            logger.info(f"stop current task. workflow_name=({self.workflow_name}) no task_id")
-        self.set_current_task_status(False)
-        return DifyClientResp.success(data="")
-            
-
+        logger.info(f"start stop current task. workflow_name=({self.workflow_name}) task_id=({task_id})")
+        if task_id == "":
+            logger.warning(f"stop current task failed. workflow_name=({self.workflow_name}) no task_id")
+            return DifyClientResp.success(data="")
         
-    
+        url = f"{self._base_url}/chat-messages/{task_id}/stop"
+
+        headers = {
+            "Authorization": f"Bearer {self._dify_api_key}",
+            "Content-Type": "application/json",
+        }
+
+        data = {
+            "user": self._dify_user_id,
+        }
+        try:
+            resp = await self.__async_request(url=url, method="POST", headers=headers,data=data)
+            logger.info(f"stop task resp: {resp}")
+        except httpx.HTTPStatusError as e:
+            logger.error(f"stop current task failed. error: {str(e)}")
+            return DifyClientResp.error(msg=str(e))
+        logger.info(f"stop current task. workflow_name=({self.workflow_name}) task_id=({self._dify_task_id})")
+        return DifyClientResp.success(data="")
+   
     async def upload_file_to_dify(self, file_path: str) -> DifyClientResp:
         logger.info(f"start upload file to dify. file_path=({file_path})")
         if not file_path.endswith(".docx"):
@@ -448,4 +451,34 @@ class DifyClient(BaseWorkflowClient):
                             return 
     
     
-    
+    async def chat_sse_raw(self, stop_flag: asyncio.Event, query: str, inputs: dict={}, files: list=[]) -> AsyncGenerator[str, None]:
+        """流式透传数据块, 不做任何额外处理"""
+        logger.info(f"start raw event stream. query=({query}) inputs=({inputs}) files=({files})")
+        url = f"{self._base_url}/chat-messages"
+        headers = {
+            "Authorization": f"Bearer {self._dify_api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "query": query,
+            "response_mode": "streaming",
+            "user": self._dify_user_id,
+            "conversation_id": "" if inputs.get("conversation_id") is None else inputs.get("conversation_id"),
+            "inputs": inputs,
+            "files": files
+        }
+        
+        async with httpx.AsyncClient(timeout=self.async_req_timeout) as client:
+            async with client.stream("POST", url=url, headers=headers, json=payload) as resp:
+                if resp.status_code != 200:
+                    logger.error(f"error raw stream. status_code=({resp.status_code})")
+                    yield f"err: {json.dumps({'error': 'Dify返回错误, dify resp=({})'.format(resp)})}\n\n"
+                    return 
+                
+                async for line in resp.aiter_lines():
+                    if stop_flag.is_set():
+                        logger.info(f"stop raw chat sse. workflow_name=({self.workflow_name})")
+                        await resp.aclose()
+                        return 
+                    # 直接返回原始行，不做任何处理
+                    yield f"{line}\n"

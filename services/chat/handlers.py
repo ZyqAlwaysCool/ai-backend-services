@@ -3,7 +3,7 @@ Description: 对话类服务业务逻辑处理器
 Author: zyq
 Date: 2025-08-26 11:19:24
 LastEditors: zyq
-LastEditTime: 2025-11-05 17:51:48
+LastEditTime: 2025-11-06 10:37:43
 '''
 from fastapi import UploadFile
 from typing import Dict, Any, AsyncGenerator, List
@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime
 import tempfile
 from pathlib import Path
+import asyncio
 
 from core.config import load_llm_cfg, get_app_config
 from core.config.error_codes import COMMON_ERROR_REQUEST_PARSE_ERROR
@@ -96,6 +97,27 @@ class ChatHandlers:
                 f"未找到用户 {user_id} 在DIFY平台的对话流 {chatflow_name} 的有效API Key"
             )
         return records[0]
+    
+    def _get_dify_files_info(self, request: ChatFlowRequest) -> List[Dict[str, Any]]:
+        dify_files = []
+        if request.files:
+            document_exts = {
+                'TXT', 'MD', 'MARKDOWN', 'MDX', 'PDF', 'HTML', 'XLSX', 'XLS',
+                'VTT', 'PROPERTIES', 'DOC', 'DOCX', 'CSV', 'EML', 'MSG',
+                'PPTX', 'PPT', 'XML', 'EPUB'
+            }
+            for file_info in request.files:
+                suffix = Path(file_info.file_name).suffix
+                ext_upper = suffix.lstrip('.').upper() if suffix else ""
+                file_type = "document" if ext_upper in document_exts else "image" # TODO: 目前只适配dify最常用的文件类型. video/audio等后续支持
+                dify_chatflow_file_info = DifyChatFlowFileInfo(
+                    upload_file_id=file_info.file_id,
+                    type=file_type,
+                    transfor_method=DifyChatFlowFileTransferMethod.LOCAL_FILE
+                )
+                dify_files.append(dify_chatflow_file_info.model_dump())
+        
+        return dify_files
     
     def _validate_request_params(self, temperature: float = None, max_tokens: int = None):
         """验证请求参数"""
@@ -284,7 +306,7 @@ class ChatHandlers:
 
         if len(apikey_records) == 0:
             raise ValidationException(
-                f"未找到用户 {request.user} 在平台 {request.platform} 的对话流 {request.chatflow_name} 的有效API Key"
+                f"未找到用户 {request.platform_user} 在平台 {request.platform} 的对话流 {request.chatflow_name} 的有效API Key"
             )
 
         # 使用查询到的API Key
@@ -300,7 +322,7 @@ class ChatHandlers:
             dify_url=dify_url,
             access_api_key=api_key,
             workflow_name=request.chatflow_name,
-            user_id=request.user,
+            user_id=request.platform_user,
             timeout=120
         )
 
@@ -331,7 +353,7 @@ class ChatHandlers:
 
                 # 调用DifyClient上传文件
                 try:
-                    file_info = await dify_client.upload_file(file_path=temp_file_path, user=request.user)
+                    file_info = await dify_client.upload_file(file_path=temp_file_path)
                     file_info["file_name"] = file.filename # 保留原始文件名信息
                     uploaded_files_info.append(file_info)
                     logger.info(f"file uploaded successfully: {file.filename} -> file_id={file_info.get('id')}")
@@ -356,23 +378,7 @@ class ChatHandlers:
         """对话流平台阻塞模式处理"""
         
         if request.platform == ChatFlowPlatform.DIFY:
-            dify_files = []
-            if request.files:
-                document_exts = {
-                    'TXT', 'MD', 'MARKDOWN', 'MDX', 'PDF', 'HTML', 'XLSX', 'XLS',
-                    'VTT', 'PROPERTIES', 'DOC', 'DOCX', 'CSV', 'EML', 'MSG',
-                    'PPTX', 'PPT', 'XML', 'EPUB'
-                }
-                for file_info in request.files:
-                    suffix = Path(file_info.file_name).suffix
-                    ext_upper = suffix.lstrip('.').upper() if suffix else ""
-                    file_type = "document" if ext_upper in document_exts else "image"
-                    dify_chatflow_file_info = DifyChatFlowFileInfo(
-                        upload_file_id=file_info.file_id,
-                        type=file_type,
-                        transfor_method=DifyChatFlowFileTransferMethod.LOCAL_FILE
-                    )
-                    dify_files.append(dify_chatflow_file_info.model_dump())
+            dify_files = self._get_dify_files_info(request)
             
             # 调用DifyClient执行阻塞对话流
             dify_api_key = self._get_dify_chatflow_apikey_info(
@@ -393,10 +399,65 @@ class ChatHandlers:
 
         else:
             raise ValidationException(f"暂不支持平台: {request.platform}")
-    
-    async def chatflow_stream_mode(self, request: ChatFlowRequest, trace_id: str = None):
+        
+    async def chatflow_stream_mode(self, request: ChatFlowRequest, login_user: str, trace_id: str = None) -> AsyncGenerator[str, None]:
         """对话流平台流式模式处理"""
-        return "success chatflow stream mode"
+        if request.platform == ChatFlowPlatform.DIFY:
+            dify_files = self._get_dify_files_info(request)
+            
+            # 调用DifyClient执行流式对话
+            dify_api_key = self._get_dify_chatflow_apikey_info(
+                user_id=login_user,
+                chatflow_name=request.chatflow_name
+            )["api_key"]
+
+            dify_client = DifyClient(
+                dify_url=self.app_config.dify_url,
+                access_api_key=dify_api_key,
+                workflow_name=request.chatflow_name,
+                user_id=request.platform_user,
+                timeout=120,
+            )
+            
+            stop_event = asyncio.Event()
+            try:
+                async for chunk in dify_client.chat_sse_raw(
+                    stop_flag=stop_event,
+                    query=request.query,
+                    inputs=request.inputs,
+                    files=dify_files
+                ):
+                    yield chunk
+            except asyncio.CancelledError:
+                stop_event.set()
+                raise
+            except Exception as e:
+                raise e
+        else:
+            raise ValidationException(f"暂不支持平台: {request.platform}")
+    
+    async def stop_chatflow_task(self, request: StopChatTaskRequest, login_user: str, trace_id: str = None):
+        """基于task_id停止对话流平台的当前任务"""
+        logger.info(f"stop chatflow task - TraceID: {trace_id} task_id={request.task_id} user={login_user}")
+
+        if request.platform == ChatFlowPlatform.DIFY:
+            dify_api_key = self._get_dify_chatflow_apikey_info(
+                user_id=login_user,
+                chatflow_name=request.chatflow_name
+            )["api_key"]
+            dify_client = DifyClient(
+                dify_url=self.app_config.dify_url,
+                access_api_key=dify_api_key,
+                workflow_name=request.chatflow_name,
+                user_id=request.platform_user,
+                timeout=120,
+            )
+            
+            return await dify_client.stop_task(task_id=request.task_id)
+        else:
+            raise ValidationException(f"暂不支持平台: {request.platform}")
+        
+        
 # ========================工作流/对话流相关接口适配========================
 
         

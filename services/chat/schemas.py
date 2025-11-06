@@ -3,7 +3,7 @@ Description: Chat服务数据模型
 Author: zyq
 Date: 2025-08-26 11:18:33
 LastEditors: zyq
-LastEditTime: 2025-11-05 17:48:39
+LastEditTime: 2025-11-06 10:55:50
 '''
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -116,10 +116,10 @@ class DifyResponseMode(str, Enum):
 
 class DifyChatFlowFileInfo(BaseModel):
     """对话流文件信息模型"""
-    transfor_method: DifyChatFlowFileTransferMethod = Field(DifyChatFlowFileTransferMethod.LOCAL_FILE, description="文件传输方式")
+    transfer_method: DifyChatFlowFileTransferMethod = Field(DifyChatFlowFileTransferMethod.LOCAL_FILE, description="文件传输方式")
     type: str = Field(..., description="文件类型")
-    upload_file_id: Optional[str] = Field(None, description="上传的文件id, 仅当传输方式为local_file时填入")
-    url: Optional[str] = Field(None, description="文件url, 仅当传输方式为remote_url时填入")
+    upload_file_id: Optional[str] = Field("", description="上传的文件id, 仅当传输方式为local_file时填入")
+    url: Optional[str] = Field("", description="文件url, 仅当传输方式为remote_url时填入")
     
 
 # class DifyChatFlowRequest(BaseModel):
@@ -150,7 +150,7 @@ class ChatFlowRequest(BaseModel):
 class UploadFilesToChatFlowPlatformRequest(BaseModel):
     """上传文件到对话流平台请求模型"""
     platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
-    user: str = Field(..., description="用户标识")
+    platform_user: str = Field(..., description="用户标识")
     chatflow_name: str = Field(..., description="对话流名称", min_length=1)
 
 class UploadFilesToChatFlowPlatformResponse(BaseModel):
@@ -161,6 +161,7 @@ class StopChatTaskRequest(BaseModel):
     """停止对话任务请求模型"""
     platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
     task_id: str = Field(..., description="任务ID")
-    user: str = Field(..., description="用户标识")
+    chatflow_name: str = Field(..., description="对话流名称", min_length=1)
+    platform_user: str = Field(..., description="用户标识")
 
 # ========================工作流/对话流相关接口适配========================

@@ -3,7 +3,7 @@ Description: Chat服务API路由定义
 Author: zyq
 Date: 2025-09-03 18:29:16
 LastEditors: zyq
-LastEditTime: 2025-11-05 17:51:06
+LastEditTime: 2025-11-06 10:23:19
 '''
 
 import uuid
@@ -161,9 +161,12 @@ async def chatflow(request: ChatFlowRequest, http_request: Request):
 
     if request.response_mode == ChatFlowResponseMode.STREAM:
         # 流式响应处理
-        return BaseResponse.success(
-            data="streaming response initiated",
-            trace_id=trace_id
+        stream_generator = handlers.chatflow_stream_mode(request, http_request.state.user_id, trace_id)
+        
+        return StreamingResponse(
+            stream_generator,
+            media_type="text/event-stream",
+            headers={"X-Trace-ID": trace_id}
         )
     
     else:
@@ -191,7 +194,7 @@ async def upload_files_to_chatflow_platform(
     # 构建请求对象
     request = UploadFilesToChatFlowPlatformRequest(
         platform=platform,
-        user=platform_user,
+        platform_user=platform_user,
         chatflow_name=chatflow_name
     )
 
@@ -211,10 +214,12 @@ async def stop_chatflow_task(request: StopChatTaskRequest, http_request: Request
     logger.info(f"Stop ChatFlow task request started | TraceID: {trace_id}")
     
     handlers = check_service_initialized(http_request)
+
+    response = await handlers.stop_chatflow_task(request, http_request.state.user_id, trace_id)
     
     logger.info(f"Stop ChatFlow task request completed | TraceID: {trace_id}")
     
     return BaseResponse.success(
-        data="test22",
+        data=response.dict(),
         trace_id=trace_id
     )
