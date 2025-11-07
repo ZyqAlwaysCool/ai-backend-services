@@ -8,5 +8,6 @@ deploy/
 temp_files/
 test_files/
 CLAUDE.md
+AGENTS.md
 plan.md
 nohup.out

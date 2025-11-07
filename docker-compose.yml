@@ -1,0 +1,63 @@
+version: "2.4"
+services:
+  ai-backend-service:
+    image: ai-backend-svr:latest
+    container_name: ai-backend-svr-ctn
+    restart: unless-stopped
+    runtime: nvidia
+    ports:
+      - "20009:20009"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./deploy_docker/logs/:/app/logs/
+      - /etc/localtime/:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      NVIDIA_VISIBLE_DEVICES: "2"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+    networks:
+      - ai_backend_services_network
+
+  mongodb:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/mongo:latest
+    container_name: ai-backend-svr-mongodb-ctn
+    restart: unless-stopped
+    volumes:
+      - ./deploy_docker/mongodb_data/:/data/db
+    networks:
+      - ai_backend_services_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/redis:7.0.14
+    container_name: ai-backend-svr-redis-ctn
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./deploy_docker/redis_data/:/data
+    networks:
+      - ai_backend_services_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+  
+networks:
+  ai_backend_services_network:
+    driver: bridge
