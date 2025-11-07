@@ -1,7 +1,9 @@
 '''
 Description: 认证中间件
 Author: zyq
-Date: 2025-01-21
+Date: 2025-08-26 17:10:43
+LastEditors: zyq
+LastEditTime: 2025-11-07 16:22:15
 '''
 from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware

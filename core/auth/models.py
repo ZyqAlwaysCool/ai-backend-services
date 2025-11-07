@@ -1,7 +1,9 @@
 '''
 Description: 认证相关数据模型
 Author: zyq
-Date: 2025-01-21
+Date: 2025-11-06 14:49:22
+LastEditors: zyq
+LastEditTime: 2025-11-07 16:21:20
 '''
 from pydantic import BaseModel, Field
 from typing import List, Optional
