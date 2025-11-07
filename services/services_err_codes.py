@@ -3,12 +3,14 @@ Description: 服务错误码
 Author: zyq
 Date: 2025-09-19 09:30:16
 LastEditors: zyq
-LastEditTime: 2025-09-19 10:33:32
+LastEditTime: 2025-11-06 17:20:48
 '''
 
 # chat服务错误码
 CHAT_SERVICE_ERRCODE_START = -1000
 CHAT_SERVICE_INIT_ERROR = -1001
+CHAT_SERVICE_DIFY_UPLOAD_FILE_ERROR = -1002
+CHAT_SERVICE_DIFY_CHAT_ERROR = -1003
 CHAT_SERVICE_ERRCODE_END = -1999
 
 # document服务错误码
@@ -39,6 +41,8 @@ def get_service_error_message(code: int) -> str:
         DOCUMENT_SERVICE_INVALID_TASK_TYPE_ERROR: "无效的任务前缀格式",
         
         CHAT_SERVICE_INIT_ERROR: "chat服务初始化失败",
+        CHAT_SERVICE_DIFY_UPLOAD_FILE_ERROR: "Dify文件上传失败",
+        CHAT_SERVICE_DIFY_CHAT_ERROR: "Dify对话流请求失败",
         
         RETRIEVAL_SERVICE_INIT_ERROR: "retrieval服务初始化失败",
         RETRIEVAL_SERVICE_TASK_NOT_FOUND_ERROR: "构建任务不存在",

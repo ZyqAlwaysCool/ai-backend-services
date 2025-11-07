@@ -3,7 +3,7 @@ Description: 对话类服务业务逻辑处理器
 Author: zyq
 Date: 2025-08-26 11:19:24
 LastEditors: zyq
-LastEditTime: 2025-11-06 17:17:16
+LastEditTime: 2025-11-06 17:27:37
 '''
 from fastapi import UploadFile
 from typing import Dict, Any, AsyncGenerator, List
@@ -16,6 +16,7 @@ import asyncio
 
 from core.config import load_llm_cfg, get_app_config
 from core.config.error_codes import COMMON_ERROR_REQUEST_PARSE_ERROR
+from ..services_err_codes import *
 from core.exceptions import ValidationException, BaseBusinessException, WorkflowException
 from .schemas import *
 from .adapters import ProtocolAdapterFactory, LLMProtocolAdapter
@@ -360,7 +361,8 @@ class ChatHandlers:
 
                 except Exception as e:
                     logger.error(f"failed to upload file {file.filename}: {str(e)}")
-                    raise ValidationException(f"文件 {file.filename} 上传失败: {str(e)}")
+                    raise BaseBusinessException(code=CHAT_SERVICE_DIFY_UPLOAD_FILE_ERROR,
+                                                message=get_service_error_message(CHAT_SERVICE_DIFY_UPLOAD_FILE_ERROR))
 
         finally:
             # 清理所有临时文件
@@ -395,6 +397,11 @@ class ChatHandlers:
             )
             
             resp = dify_client.execute_chatflow_block(request.query, inputs=request.inputs, files=dify_files)
+            if resp.status == "error":
+                raise WorkflowException(
+                    code=CHAT_SERVICE_DIFY_CHAT_ERROR,
+                    message=get_service_error_message(CHAT_SERVICE_DIFY_CHAT_ERROR),
+                    details=resp)
             return resp
 
         else:
@@ -432,7 +439,11 @@ class ChatHandlers:
                 stop_event.set()
                 raise
             except Exception as e:
-                raise e
+                raise WorkflowException(
+                    code=CHAT_SERVICE_DIFY_CHAT_ERROR,
+                    message=get_service_error_message(CHAT_SERVICE_DIFY_CHAT_ERROR),
+                    details=str(e)
+                )
         else:
             raise ValidationException(f"暂不支持平台: {request.platform}")
     
