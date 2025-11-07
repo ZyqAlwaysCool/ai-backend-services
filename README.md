@@ -14,7 +14,7 @@
 - 完整的请求链路追踪
 
 **当前服务模块：**
-- **Chat Service**: 基于大语言模型的对话服务，支持单轮和多轮对话
+- **Chat Service**: 基于大语言模型的对话服务，支持单轮和多轮对话，适配dify等低代码平台api
 - **Document Service**: 文档处理服务，支持 PDF 解析、格式转换、文本提取等
 - **Retrieval Service**: 向量检索服务，支持知识库构建和语义搜索
 
@@ -69,17 +69,15 @@
 pip install -r requirements.txt
 
 # 启动应用
-python app.py
+python -m app.py
 ```
 
 ### 2. 用户认证
 
 本平台需要 JWT Token 认证才能访问服务接口。
 
-**创建用户(由开发者提供给业务侧登录信息)**
-```bash
-python scripts/create_user.py --username your_username --password your_password
-```
+**创建用户**
+通过/auth/register接口注册用户
 
 **获取 Token：**
 ```bash
@@ -91,7 +89,6 @@ curl -X POST "http://localhost:20000/auth/login" \
 返回的 `access_token` 用于后续 API 调用。
 
 ### 3. 使用服务
-
 **访问 Swagger 文档：**
 访问 `http://localhost:20000/docs`，点击右上角 "Authorize" 按钮，输入 `Bearer your_token` 进行认证。
 
@@ -102,12 +99,6 @@ curl -X POST "http://localhost:20000/chat/completion" \
   -H "Authorization: Bearer your_token" \
   -H "Content-Type: application/json" \
   -d '{"query": "你好", "model": "qwen3-32B"}'
-
-# 文档解析
-curl -X POST "http://localhost:20000/document/pdf-parser" \
-  -H "Authorization: Bearer your_token" \
-  -F "input_type=file" \
-  -F "file=@document.pdf"
 ```
 
 ### 4. 配置说明
