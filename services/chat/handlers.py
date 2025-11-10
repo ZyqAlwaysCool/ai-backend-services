@@ -376,12 +376,12 @@ class ChatHandlers:
 
         return UploadFilesToChatFlowPlatformResponse(file_info_list=uploaded_files_info)
     
-    def chatflow_block_mode(self, request: ChatFlowRequest, login_user: str, trace_id: str = None):
+    def chatflow_block_mode(self, request: ChatFlowRequest, login_user: str, trace_id: str = None) -> ChatFlowBlockResponse:
         """对话流平台阻塞模式处理"""
-        
+
         if request.platform == ChatFlowPlatform.DIFY:
             dify_files = self._get_dify_files_info(request)
-            
+
             # 调用DifyClient执行阻塞对话流
             dify_api_key = self._get_dify_chatflow_apikey_info(
                 user_id=login_user,
@@ -395,14 +395,21 @@ class ChatHandlers:
                 user_id=request.platform_user,
                 timeout=120,
             )
-            
+
             resp = dify_client.execute_chatflow_block(request.query, inputs=request.inputs, files=dify_files)
             if resp.status == "error":
                 raise WorkflowException(
                     code=CHAT_SERVICE_DIFY_CHAT_ERROR,
                     message=get_service_error_message(CHAT_SERVICE_DIFY_CHAT_ERROR),
                     details=resp)
-            return resp
+
+            # 从dify响应中提取需要的字段
+            dify_data = resp.data if isinstance(resp.data, dict) else {}
+            return ChatFlowBlockResponse(
+                answer=dify_data.get("answer", ""),
+                conversation_id=dify_data.get("conversation_id", ""),
+                metadata=dify_data.get("metadata")
+            )
 
         else:
             raise ValidationException(f"暂不支持平台: {request.platform}")

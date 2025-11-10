@@ -3,7 +3,7 @@ Description: 通用dify http client, 封装dify的后台api接口
 Author: zyq
 Date: 2025-07-29 17:51:12
 LastEditors: zyq
-LastEditTime: 2025-11-06 10:49:57
+LastEditTime: 2025-11-07 17:53:29
 '''
 import yaml
 from pathlib import Path
@@ -188,6 +188,9 @@ class DifyClient(BaseWorkflowClient):
         except httpx.HTTPStatusError as e:
             logger.error(f"execute chatflow failed. error: {str(e)} dify_response: {e.response.text if hasattr(e, 'response') else 'N/A'}")
             return DifyClientResp.error(msg=str(e))
+        
+        # 处理dify原始回包结果
+        
         
         return DifyClientResp.success(data=response.json())
     

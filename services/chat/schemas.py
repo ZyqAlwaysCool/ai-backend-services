@@ -164,4 +164,10 @@ class StopChatTaskRequest(BaseModel):
     chatflow_name: str = Field(..., description="对话流名称", min_length=1)
     platform_user: str = Field(..., description="用户标识")
 
+class ChatFlowBlockResponse(BaseModel):
+    """对话流阻塞模式响应模型"""
+    answer: str = Field(..., description="AI回复内容")
+    conversation_id: str = Field(..., description="会话ID")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="元数据信息")
+
 # ========================工作流/对话流相关接口适配========================
