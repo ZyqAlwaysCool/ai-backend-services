@@ -3,7 +3,7 @@ Description: 通用dify http client, 封装dify的后台api接口
 Author: zyq
 Date: 2025-07-29 17:51:12
 LastEditors: zyq
-LastEditTime: 2025-11-07 17:53:29
+LastEditTime: 2025-11-11 17:32:43
 '''
 import yaml
 from pathlib import Path
@@ -60,6 +60,11 @@ class DifyClient(BaseWorkflowClient):
         
         logger.info(f"dify client init success. workflow_name=({self.workflow_name}) url=({self._base_url})")
     
+    @staticmethod
+    def _format_sse_error(message: str) -> str:
+        """构造符合SSE规范的错误事件数据"""
+        return f"event: error\ndata: {json.dumps({'error': message})}\n\n"
+    
     @deprecated(version="1.0", reason="此方法已废弃, 请使用 chat_sse 或 chat_sse_raw 方法")
     async def __async_request_for_stream_chat(self, url: str, headers: dict, payload: dict, is_split_think: bool=True) -> DifyClientResp:
         """异步http请求封装. 目前与dify流式返回业务信息耦合"""
@@ -86,7 +91,8 @@ class DifyClient(BaseWorkflowClient):
                                     return DifyClientResp.error(msg=str(e))
                         if is_split_think:
                             # 是否切掉回答中的think部分内容
-                            llm_resp_no_think = llm_resp_full_text.split("</think>")[1].strip()
+                            _, sep, tail = llm_resp_full_text.partition("</think>")
+                            llm_resp_no_think = tail.strip() if sep else llm_resp_full_text.strip()
                         else:
                             llm_resp_no_think = llm_resp_full_text
                         return DifyClientResp.success(data=llm_resp_no_think, conv_id=self.dify_conversation_id)
@@ -143,12 +149,19 @@ class DifyClient(BaseWorkflowClient):
             response.raise_for_status()
             if not stream:
                 await response.aread()  # 一次性读完整 body
+
+            # 对于204 NO CONTENT状态码，避免JSON解析错误
+            if response.status_code == 204:
+                logger.info("end async request. response=HTTP 204 No Content")
+            else:
+                logger.info(f"end async request. response=({response.json()})")
             return response
     
     @deprecated(version="1.0", reason="此流式对话方法已废弃, 请使用 chat_sse 或 chat_sse_raw 方法")
-    async def stream_chat(self, query: str, inputs: dict={}, is_split_think: bool=True) -> DifyClientResp:
+    async def stream_chat(self, query: str, inputs: Optional[Dict[str, Any]]=None, is_split_think: bool=True) -> DifyClientResp:
         """流式对话"""
         logger.info(f"start stream chat. query=({query})")
+        inputs = inputs or {}
         url = f"{self._base_url}/chat-messages"
         headers = {
             "Authorization": f"Bearer {self._dify_api_key}",
@@ -166,8 +179,10 @@ class DifyClient(BaseWorkflowClient):
         
         return chat_result
     
-    def execute_chatflow_block(self, query: str, inputs: dict={}, files: list=[], user_id: str=None) -> DifyClientResp:
+    async def execute_chatflow_block(self, query: str, inputs: Optional[Dict[str, Any]]=None, files: Optional[List[Any]]=None, user_id: str=None) -> DifyClientResp:
         """阻塞模式执行对话流, 提取执行结果"""
+        inputs = inputs or {}
+        files = files or []
         logger.info(f"start execute chatflow. chatflow_name=({self.workflow_name}) inputs=({inputs})")
         url = f"{self._base_url}/chat-messages"
         headers = {
@@ -182,20 +197,30 @@ class DifyClient(BaseWorkflowClient):
             "inputs": inputs,
             "files": files
         }
-        
         try:
-            response = self.__sync_request(url=url, method="POST", headers=headers, json=payload)
+            response = await self.__async_request(url=url, method="POST", headers=headers, data=payload)
+            body = response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(f"execute chatflow failed. error: {str(e)} dify_response: {e.response.text if hasattr(e, 'response') else 'N/A'}")
-            return DifyClientResp.error(msg=str(e))
+            logger.error(f"execute chatflow failed. HTTP error: {str(e)} dify_response: {e.response.text if hasattr(e, 'response') else 'N/A'}")
+            return DifyClientResp.error(msg=f"Dify服务HTTP错误: status_code=({e.response.status_code}) content=({e.response.text})")
+        except httpx.ConnectError as e:
+            logger.error(f"execute chatflow failed. Connection error: {str(e)}")
+            return DifyClientResp.error(msg="无法连接到Dify服务，请检查网络连接或服务状态")
+        except httpx.RequestError as e:
+            logger.error(f"execute chatflow failed. Request error: {str(e)}")
+            return DifyClientResp.error(msg=f"网络请求错误: {str(e)}")
+        except ValueError as e:
+            logger.error(f"execute chatflow failed. invalid json resp: {str(e)}")
+            return DifyClientResp.error(msg="Dify响应格式错误")
+        except Exception as e:
+            logger.error(f"execute chatflow failed. unexpected error: {str(e)}")
+            return DifyClientResp.error(msg="执行对话流失败，请稍后重试")
         
-        # 处理dify原始回包结果
-        
-        
-        return DifyClientResp.success(data=response.json())
+        return DifyClientResp.success(data=body)
     
-    async def execute_workflow(self, inputs: dict={}, is_stream=False) -> DifyClientResp:
+    async def execute_workflow(self, inputs: Optional[Dict[str, Any]]=None, is_stream=False) -> DifyClientResp:
         """执行工作流, 提取执行结果. 目前只支持接收blocking模式的结果. 实测在workflow下, 流式请求的结果也仅存在于【workflow_finished】节点中, 不是像chatflow一样的真流式."""
+        inputs = inputs or {}
         logger.info(f"start execute workflow. workflow_name=({self.workflow_name}) inputs=({inputs})")
 
         if is_stream:
@@ -215,32 +240,113 @@ class DifyClient(BaseWorkflowClient):
         
         try:
             response = await self.__async_request(url=url, headers=headers, data=payload)
+            body = response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(f"execute workflow failed. error: {str(e)}")
-            return DifyClientResp.error(msg=str(e))
+            logger.error(f"execute workflow failed. HTTP error: {str(e)}")
+            return DifyClientResp.error(msg=f"Dify服务HTTP错误: status_code=({e.response.status_code}) content=({e.response.text})")
+        except httpx.ConnectError as e:
+            logger.error(f"execute workflow failed. Connection error: {str(e)}")
+            return DifyClientResp.error(msg="无法连接到Dify服务，请检查网络连接或服务状态")
+        except httpx.RequestError as e:
+            logger.error(f"execute workflow failed. Request error: {str(e)}")
+            return DifyClientResp.error(msg=f"网络请求错误: {str(e)}")
+        except ValueError as e:
+            logger.error(f"execute workflow failed. invalid json resp: {str(e)}")
+            return DifyClientResp.error(msg="Dify响应格式错误")
+        except Exception as e:
+            logger.error(f"execute workflow failed. unexpected error: {str(e)}")
+            return DifyClientResp.error(msg="执行工作流失败，请稍后重试")
         
-        data = response.json()["data"]
+        data = body.get("data")
+        if not isinstance(data, dict):
+            logger.error(f"execute workflow failed. invalid resp body: {body}")
+            return DifyClientResp.error(msg="workflow response malformed")
 
-        if data["status"] == "succeeded":
-            return DifyClientResp.success(data=data["outputs"])
-        else:
-            return DifyClientResp.error(msg=data["error"])
+        if data.get("status") == "succeeded":
+            return DifyClientResp.success(data=data.get("outputs", {}))
+
+        error_msg = data.get("error") or body.get("message") or "workflow run failed"
+        return DifyClientResp.error(msg=error_msg)
     
-    def get_history_messages_by_cid(self, conversation_id: str) -> DifyClientResp:
-        """通过会话id获取历史消息"""
-        logger.info(f"start get history messages by cid. conversation_id=({conversation_id})")
-        url = f"{self._base_url}/messages?user={self._dify_user_id}&conversation_id={conversation_id}"
+    async def get_conversation_history(self, conversation_id: str, user: str = None) -> DifyClientResp:
+        """获取会话历史记录
+
+        Args:
+            conversation_id: 会话ID
+            user: 用户标识，如不传则使用初始化时的user_id
+
+        Returns:
+            DifyClientResp: 包含历史消息列表的响应结果
+        """
+        logger.info(f"start get conversation history. conversation_id=({conversation_id})")
+        url = f"{self._base_url}/messages"
         headers = {
             "Authorization": f"Bearer {self._dify_api_key}",
             "Content-Type": "application/json",
         }
+        params = {
+            "conversation_id": conversation_id,
+            "user": user if user else self._dify_user_id,
+        }
+
         try:
-            response = self.__sync_request(url=url, method="GET", headers=headers)
+            response = await self.__async_request(url=url, method="GET", headers=headers, params=params)
+            body = response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(f"get history messages by cid failed. error: {str(e)}")
-            return DifyClientResp.error(msg=str(e))
-        
-        return DifyClientResp.success(data=response.json(), conv_id=conversation_id)
+            logger.error(f"get conversation history failed. HTTP error: {str(e.response.text)}")
+            return DifyClientResp.error(msg=f"Dify服务HTTP错误: status_code=({e.response.status_code}) content=({e.response.text})")
+        except httpx.ConnectError as e:
+            logger.error(f"get conversation history failed. Connection error: {str(e)}")
+            return DifyClientResp.error(msg="无法连接到Dify服务，请检查网络连接或服务状态")
+        except httpx.RequestError as e:
+            logger.error(f"get conversation history failed. Request error: {str(e)}")
+            return DifyClientResp.error(msg=f"网络请求错误: {str(e)}")
+        except ValueError as e:
+            logger.error(f"get conversation history failed. invalid json resp: {str(e)}")
+            return DifyClientResp.error(msg="Dify响应格式错误")
+        except Exception as e:
+            logger.error(f"get conversation history failed. unexpected error: {str(e)}")
+            return DifyClientResp.error(msg="获取会话历史失败，请稍后重试")
+
+        return DifyClientResp.success(data=body, conv_id=conversation_id)
+
+    async def get_conversations(self, user: Optional[str] = None, last_id: Optional[str] = None, limit: int = 20) -> DifyClientResp:
+        """
+        获取会话列表
+        """
+        logger.info(f"start get conversations. user=({user}) last_id=({last_id}) limit=({limit})")
+        url = f"{self._base_url}/conversations"
+        headers = {
+            "Authorization": f"Bearer {self._dify_api_key}",
+            "Content-Type": "application/json",
+        }
+        params = {
+            "user": user if user else self._dify_user_id,
+            "limit": limit,
+        }
+        if last_id:
+            params["last_id"] = last_id
+
+        try:
+            response = await self.__async_request(url=url, method="GET", headers=headers, params=params)
+            body = response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"get conversations failed. HTTP error: {str(e)}")
+            return DifyClientResp.error(msg=f"Dify服务HTTP错误: status_code=({e.response.status_code}) content=({e.response.text})")
+        except httpx.ConnectError as e:
+            logger.error(f"get conversations failed. Connection error: {str(e)}")
+            return DifyClientResp.error(msg="无法连接到Dify服务，请检查网络连接或服务状态")
+        except httpx.RequestError as e:
+            logger.error(f"get conversations failed. Request error: {str(e)}")
+            return DifyClientResp.error(msg=f"网络请求错误: {str(e)}")
+        except ValueError as e:
+            logger.error(f"get conversations failed. invalid json resp: {str(e)}")
+            return DifyClientResp.error(msg="Dify响应格式错误")
+        except Exception as e:
+            logger.error(f"get conversations failed. unexpected error: {str(e)}")
+            return DifyClientResp.error(msg="获取会话列表失败，请稍后重试")
+
+        return DifyClientResp.success(data=body)
     
     def set_current_task_status(self, status: bool) -> None:
         logger.info(f"set task status. workflow_name=({self.workflow_name}) status=({status})")
@@ -269,43 +375,108 @@ class DifyClient(BaseWorkflowClient):
         }
         try:
             resp = await self.__async_request(url=url, method="POST", headers=headers,data=data)
-            logger.info(f"stop task resp: {resp}")
+            logger.info(f"stop task resp: {resp.json()}")
         except httpx.HTTPStatusError as e:
-            logger.error(f"stop current task failed. error: {str(e)}")
-            return DifyClientResp.error(msg=str(e))
+            logger.error(f"stop current task failed. HTTP error: {str(e)}")
+            return DifyClientResp.error(msg=f"Dify服务HTTP错误: status_code=({e.response.status_code}) content=({e.response.text})")
+        except httpx.ConnectError as e:
+            logger.error(f"stop current task failed. Connection error: {str(e)}")
+            return DifyClientResp.error(msg="无法连接到Dify服务，请检查网络连接或服务状态")
+        except httpx.RequestError as e:
+            logger.error(f"stop current task failed. Request error: {str(e)}")
+            return DifyClientResp.error(msg=f"网络请求错误: {str(e)}")
+        except Exception as e:
+            logger.error(f"stop current task failed. unexpected error: {str(e)}")
+            return DifyClientResp.error(msg="停止任务失败，请稍后重试")
         logger.info(f"stop current task. workflow_name=({self.workflow_name}) task_id=({self._dify_task_id})")
         return DifyClientResp.success(data="")
-   
-    async def upload_file_to_dify(self, file_path: str) -> DifyClientResp:
-        logger.info(f"start upload file to dify. file_path=({file_path})")
-        if not file_path.endswith(".docx"):
-            raise RuntimeError("file must be .docx format")
 
-        url = f"{self._base_url}/files/upload"
+    async def delete_conversation(self, conversation_id: str, user: Optional[str] = None) -> DifyClientResp:
+        """
+        删除会话
+        """
+        logger.info(f"start delete conversation. conversation_id=({conversation_id})")
+        url = f"{self._base_url}/conversations/{conversation_id}"
         headers = {
             "Authorization": f"Bearer {self._dify_api_key}",
+            "Content-Type": "application/json",
         }
-        data = {
-            "user": self._dify_user_id,
-        }
-
-        file = {
-            # .docx格式必须指定MIME类型
-            "file": (os.path.basename(file_path),
-                     open(file_path, "rb"),
-                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        payload = {
+            "user": user if user else self._dify_user_id,
         }
 
         try:
-            response = await self.__async_request(url=url, method="POST", headers=headers, data=data, files=file)
+            response = await self.__async_request(url=url, method="DELETE", headers=headers, data=payload)
+
+            # 对于204 NO CONTENT响应，直接返回成功
+            if response.status_code == 204:
+                logger.info(f"delete conversation success. conversation_id=({conversation_id})")
+                return DifyClientResp.success(data={"message": "会话删除成功"})
+
+            body = response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(f"upload file to dify failed. error: {str(e)}")
-            return DifyClientResp.error(msg=str(e))
+            logger.error(f"delete conversation failed. HTTP error: {str(e)}")
+            return DifyClientResp.error(msg=f"Dify服务HTTP错误: status_code=({e.response.status_code}) content=({e.response.text})")
+        except httpx.ConnectError as e:
+            logger.error(f"delete conversation failed. Connection error: {str(e)}")
+            return DifyClientResp.error(msg="无法连接到Dify服务，请检查网络连接或服务状态")
+        except httpx.RequestError as e:
+            logger.error(f"delete conversation failed. Request error: {str(e)}")
+            return DifyClientResp.error(msg=f"网络请求错误: {str(e)}")
+        except ValueError as e:
+            logger.error(f"delete conversation failed. invalid json resp: {str(e)}")
+            return DifyClientResp.error(msg="Dify响应格式错误")
+        except Exception as e:
+            logger.error(f"delete conversation failed. unexpected error: {str(e)}")
+            return DifyClientResp.error(msg="删除会话失败，请稍后重试")
 
-        return DifyClientResp.success(data=response.json())
+        return DifyClientResp.success(data=body)
 
+    async def rename_conversation(
+        self,
+        conversation_id: str,
+        name: Optional[str] = None,
+        auto_generate: bool = False,
+        user: Optional[str] = None,
+    ) -> DifyClientResp:
+        """
+        会话重命名
+        """
+        logger.info(f"start rename conversation. conversation_id=({conversation_id}) name=({name}) auto_generate=({auto_generate})")
+        url = f"{self._base_url}/conversations/{conversation_id}/name"
+        headers = {
+            "Authorization": f"Bearer {self._dify_api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "user": user if user else self._dify_user_id,
+            "auto_generate": auto_generate,
+        }
+        if name is not None:
+            payload["name"] = name
 
-    async def upload_file(self, file_path: str, user: Optional[str] = None) -> Dict[str, Any]:
+        try:
+            response = await self.__async_request(url=url, method="POST", headers=headers, data=payload)
+            body = response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"rename conversation failed. HTTP error: {str(e)}")
+            return DifyClientResp.error(msg=f"Dify服务HTTP错误: status_code=({e.response.status_code}) content=({e.response.text})")
+        except httpx.ConnectError as e:
+            logger.error(f"rename conversation failed. Connection error: {str(e)}")
+            return DifyClientResp.error(msg="无法连接到Dify服务，请检查网络连接或服务状态")
+        except httpx.RequestError as e:
+            logger.error(f"rename conversation failed. Request error: {str(e)}")
+            return DifyClientResp.error(msg=f"网络请求错误: {str(e)}")
+        except ValueError as e:
+            logger.error(f"rename conversation failed. invalid json resp: {str(e)}")
+            return DifyClientResp.error(msg="Dify响应格式错误")
+        except Exception as e:
+            logger.error(f"rename conversation failed. unexpected error: {str(e)}")
+            return DifyClientResp.error(msg="重命名会话失败，请稍后重试")
+
+        return DifyClientResp.success(data=body)
+   
+    async def upload_file(self, file_path: str, user: Optional[str] = None) -> DifyClientResp:
         """
         通用文件上传接口,支持多种文件格式
 
@@ -314,7 +485,7 @@ class DifyClient(BaseWorkflowClient):
             user: 用户标识,如不传则使用初始化时的user_id
 
         Returns:
-            上传成功后返回的文件信息字典,包含:
+            DifyClientResp: 上传结果，成功时data包含文件信息字典，包含:
             - id: 文件ID
             - name: 文件名
             - size: 文件大小(bytes)
@@ -322,17 +493,12 @@ class DifyClient(BaseWorkflowClient):
             - mime_type: 文件MIME类型
             - created_by: 上传者ID
             - created_at: 上传时间
-
-        Raises:
-            httpx.HTTPStatusError: HTTP请求失败
-            FileNotFoundError: 文件不存在
-            ValueError: 不支持的文件类型
         """
         logger.info(f"start upload file. file_path=({file_path})")
 
         # 检查文件是否存在
         if not os.path.exists(file_path):
-            raise FileNotFoundError(f"文件不存在: {file_path}")
+            return DifyClientResp.error(msg=f"文件不存在: {file_path}")
 
         # 获取文件扩展名和MIME类型
         file_ext = os.path.splitext(file_path)[1].lower()
@@ -408,11 +574,23 @@ class DifyClient(BaseWorkflowClient):
 
                 result = response.json()
                 logger.info(f"file upload success. file_id={result.get('id')} file_name={result.get('name')}")
-                return result
+                return DifyClientResp.success(data=result)
 
             except httpx.HTTPStatusError as e:
-                logger.error(f"upload file failed. error: {str(e)} response: {e.response.text if hasattr(e, 'response') else 'N/A'}")
-                raise
+                logger.error(f"upload file failed. HTTP error: {str(e)} response: {e.response.text if hasattr(e, 'response') else 'N/A'}")
+                return DifyClientResp.error(msg=f"Dify服务HTTP错误: status_code=({e.response.status_code}) content=({e.response.text})")
+            except httpx.ConnectError as e:
+                logger.error(f"upload file failed. Connection error: {str(e)}")
+                return DifyClientResp.error(msg="无法连接到Dify服务，请检查网络连接或服务状态")
+            except httpx.RequestError as e:
+                logger.error(f"upload file failed. Request error: {str(e)}")
+                return DifyClientResp.error(msg=f"网络请求错误: {str(e)}")
+            except ValueError as e:
+                logger.error(f"upload file failed. invalid json resp: {str(e)}")
+                return DifyClientResp.error(msg="Dify响应格式错误")
+            except Exception as e:
+                logger.error(f"upload file failed. unexpected error: {str(e)}")
+                return DifyClientResp.error(msg="文件上传失败，请稍后重试")
 
 
     async def chat_sse(self, query: str, inputs: dict, stop_flag: asyncio.Event) -> AsyncGenerator[str, None]:
@@ -434,7 +612,7 @@ class DifyClient(BaseWorkflowClient):
             async with client.stream("POST", url=url, headers=headers, json=payload) as resp:
                 if resp.status_code != 200:
                     logger.error(f"error even stream. status_code=({resp.status_code})")
-                    yield f"err: {json.dumps({'error': 'Dify返回错误'})}\n\n"
+                    yield self._format_sse_error("Dify返回错误")
                     return 
                 
                 async for line in resp.aiter_lines():
@@ -450,12 +628,14 @@ class DifyClient(BaseWorkflowClient):
                                 yield f"data: {ans}\n\n"
                         except json.JSONDecodeError as e:
                             logger.error(f"error even stream. decode json error: {str(e)}")
-                            yield f"err: {json.dumps({'error': str(e)})}\n\n"
+                            yield self._format_sse_error(str(e))
                             return 
     
     
-    async def chat_sse_raw(self, stop_flag: asyncio.Event, query: str, inputs: dict={}, files: list=[]) -> AsyncGenerator[str, None]:
+    async def chat_sse_raw(self, stop_flag: asyncio.Event, query: str, inputs: Optional[Dict[str, Any]]=None, files: Optional[List[Any]]=None) -> AsyncGenerator[str, None]:
         """流式透传数据块, 不做任何额外处理"""
+        inputs = inputs or {}
+        files = files or []
         logger.info(f"start raw event stream. query=({query}) inputs=({inputs}) files=({files})")
         url = f"{self._base_url}/chat-messages"
         headers = {
@@ -470,18 +650,163 @@ class DifyClient(BaseWorkflowClient):
             "inputs": inputs,
             "files": files
         }
-        
-        async with httpx.AsyncClient(timeout=self.async_req_timeout) as client:
-            async with client.stream("POST", url=url, headers=headers, json=payload) as resp:
-                if resp.status_code != 200:
-                    logger.error(f"error raw stream. status_code=({resp.status_code})")
-                    yield f"err: {json.dumps({'error': 'Dify返回错误, dify resp=({})'.format(resp)})}\n\n"
-                    return 
-                
-                async for line in resp.aiter_lines():
-                    if stop_flag.is_set():
-                        logger.info(f"stop raw chat sse. workflow_name=({self.workflow_name})")
-                        await resp.aclose()
-                        return 
-                    # 直接返回原始行，不做任何处理
-                    yield f"{line}\n"
+
+        try:
+            async with httpx.AsyncClient(timeout=self.async_req_timeout) as client:
+                async with client.stream("POST", url=url, headers=headers, json=payload) as resp:
+                    if resp.status_code != 200:
+                        error_text = ""
+                        try:
+                            error_text = await resp.aread()
+                            error_text = error_text.decode('utf-8')
+                        except Exception:
+                            error_text = f"HTTP {resp.status_code} error"
+                        logger.error(f"error raw stream. status_code=({resp.status_code}) resp=({error_text})")
+                        yield self._format_sse_error(f"Dify返回错误: {error_text}")
+                        return
+
+                    async for line in resp.aiter_lines():
+                        if stop_flag.is_set():
+                            logger.info(f"stop raw chat sse. workflow_name=({self.workflow_name})")
+                            await resp.aclose()
+                            return
+                        # 直接返回原始行，不做任何处理
+                        yield f"{line}\n"
+
+        except httpx.HTTPError as e:
+            logger.error(f"chat_sse_raw HTTP error: {str(e)}")
+            yield self._format_sse_error(f"网络请求错误: {str(e)}")
+        except Exception as e:
+            logger.error(f"chat_sse_raw unexpected error: {str(e)}")
+            yield self._format_sse_error(f"系统错误: {str(e)}")
+
+    async def message_feedback(self, message_id: str, rating: str, user: str, content: str = "") -> DifyClientResp:
+        """消息反馈（点赞）接口
+
+        Args:
+            message_id: 消息ID
+            rating: 评分，如"like"或"dislike"
+            user: 用户标识
+            content: 反馈内容，可选
+
+        Returns:
+            DifyClientResp: 操作结果
+        """
+        logger.info(f"start message feedback. message_id=({message_id}) rating=({rating}) user=({user})")
+        url = f"{self._base_url}/messages/{message_id}/feedbacks"
+        headers = {
+            "Authorization": f"Bearer {self._dify_api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "rating": rating,
+            "user": user,
+        }
+
+        # 只有当content不为空时才添加到payload中
+        if content:
+            payload["content"] = content
+
+        try:
+            response = await self.__async_request(url=url, method="POST", headers=headers, data=payload)
+            body = response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"message feedback failed. HTTP error: {str(e)}")
+            return DifyClientResp.error(msg=f"Dify服务HTTP错误: status_code=({e.response.status_code}) content=({e.response.text})")
+        except httpx.ConnectError as e:
+            logger.error(f"message feedback failed. Connection error: {str(e)}")
+            return DifyClientResp.error(msg="无法连接到Dify服务，请检查网络连接或服务状态")
+        except httpx.RequestError as e:
+            logger.error(f"message feedback failed. Request error: {str(e)}")
+            return DifyClientResp.error(msg=f"网络请求错误: {str(e)}")
+        except ValueError as e:
+            logger.error(f"message feedback failed. invalid json resp: {str(e)}")
+            return DifyClientResp.error(msg="Dify响应格式错误")
+        except Exception as e:
+            logger.error(f"message feedback failed. unexpected error: {str(e)}")
+            return DifyClientResp.error(msg="消息反馈失败，请稍后重试")
+
+        return DifyClientResp.success(data=body)
+
+    async def get_app_feedbacks(self, page: int = 1, limit: int = 20) -> DifyClientResp:
+        """获取APP的消息点赞和反馈
+
+        Args:
+            page: 页码，默认为1
+            limit: 每页数量，默认为20
+
+        Returns:
+            DifyClientResp: 包含反馈列表的响应结果
+        """
+        logger.info(f"start get app feedbacks. page=({page}) limit=({limit})")
+        url = f"{self._base_url}/app/feedbacks"
+        headers = {
+            "Authorization": f"Bearer {self._dify_api_key}",
+            "Content-Type": "application/json",
+        }
+        params = {
+            "page": page,
+            "limit": limit,
+        }
+
+        try:
+            response = await self.__async_request(url=url, method="GET", headers=headers, params=params)
+            body = response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"get app feedbacks failed. HTTP error: {str(e)}")
+            return DifyClientResp.error(msg=f"Dify服务HTTP错误: status_code=({e.response.status_code}) content=({e.response.text})")
+        except httpx.ConnectError as e:
+            logger.error(f"get app feedbacks failed. Connection error: {str(e)}")
+            return DifyClientResp.error(msg="无法连接到Dify服务，请检查网络连接或服务状态")
+        except httpx.RequestError as e:
+            logger.error(f"get app feedbacks failed. Request error: {str(e)}")
+            return DifyClientResp.error(msg=f"网络请求错误: {str(e)}")
+        except ValueError as e:
+            logger.error(f"get app feedbacks failed. invalid json resp: {str(e)}")
+            return DifyClientResp.error(msg="Dify响应格式错误")
+        except Exception as e:
+            logger.error(f"get app feedbacks failed. unexpected error: {str(e)}")
+            return DifyClientResp.error(msg="获取反馈失败，请稍后重试")
+
+        return DifyClientResp.success(data=body)
+
+    async def get_suggested_questions(self, message_id: str, user: str) -> DifyClientResp:
+        """获取下一轮建议问题列表
+
+        Args:
+            message_id: 消息ID
+            user: 用户标识
+
+        Returns:
+            DifyClientResp: 包含建议问题列表的响应结果
+        """
+        logger.info(f"start get suggested questions. message_id=({message_id}) user=({user})")
+        url = f"{self._base_url}/messages/{message_id}/suggested"
+        headers = {
+            "Authorization": f"Bearer {self._dify_api_key}",
+            "Content-Type": "application/json",
+        }
+        params = {
+            "user": user,
+        }
+
+        try:
+            response = await self.__async_request(url=url, method="GET", headers=headers, params=params)
+            body = response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"get suggested questions failed. HTTP error: {str(e.response.text)}")
+            return DifyClientResp.error(msg=f"Dify服务HTTP错误: status_code=({e.response.status_code}) content=({e.response.text})")
+        except httpx.ConnectError as e:
+            logger.error(f"get suggested questions failed. Connection error: {str(e)}")
+            return DifyClientResp.error(msg="无法连接到Dify服务，请检查网络连接或服务状态")
+        except httpx.RequestError as e:
+            logger.error(f"get suggested questions failed. Request error: {str(e)}")
+            return DifyClientResp.error(msg=f"网络请求错误: {str(e)}")
+        except ValueError as e:
+            logger.error(f"get suggested questions failed. invalid json resp: {str(e)}")
+            return DifyClientResp.error(msg="Dify响应格式错误")
+        except Exception as e:
+            logger.error(f"get suggested questions failed. unexpected error: {str(e)}")
+            return DifyClientResp.error(msg="获取建议问题失败，请稍后重试")
+
+        return DifyClientResp.success(data=body)

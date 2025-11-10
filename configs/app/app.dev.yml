@@ -26,7 +26,7 @@ auth:
 # 开发环境端口配置
 server:
   host: "0.0.0.0"
-  port: 20000
+  port: 20001
 
 # Qdrant向量数据库配置
 qdrant:

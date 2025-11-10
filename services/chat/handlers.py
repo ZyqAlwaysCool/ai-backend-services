@@ -3,7 +3,7 @@ Description: 对话类服务业务逻辑处理器
 Author: zyq
 Date: 2025-08-26 11:19:24
 LastEditors: zyq
-LastEditTime: 2025-11-06 17:27:37
+LastEditTime: 2025-11-11 17:11:09
 '''
 from fastapi import UploadFile
 from typing import Dict, Any, AsyncGenerator, List
@@ -296,23 +296,10 @@ class ChatHandlers:
         if request.platform != ChatFlowPlatform.DIFY:
             raise ValidationException(f"暂不支持平台: {request.platform}")
 
-        # 从数据库获取指定chatflow的API Key
-        filter_query = {
-            "user_id": login_user,
-            "chatflow_name": request.chatflow_name,
-            "platform": request.platform,
-            "status": ApiKeyStatus.ACTIVE
-        }
-        apikey_records = self._chatflow_apikey_storage.find_record(filter_query)
-
-        if len(apikey_records) == 0:
-            raise ValidationException(
-                f"未找到用户 {request.platform_user} 在平台 {request.platform} 的对话流 {request.chatflow_name} 的有效API Key"
-            )
-
-        # 使用查询到的API Key
-        api_key = apikey_records[0]["api_key"]
-        logger.info(f"found api key for user={login_user} records={apikey_records[0]}")
+        # 获取API Key
+        apikey_info = self._get_dify_chatflow_apikey_info(user_id=login_user, chatflow_name=request.chatflow_name)
+        api_key = apikey_info["api_key"]
+        logger.info(f"found api key for user={login_user} key_id={apikey_info.get('key_id')}")
 
         # 获取Dify平台URL
         dify_url = self.app_config.dify_url
@@ -353,16 +340,16 @@ class ChatHandlers:
                 logger.info(f"temp file created: {temp_file_path} for original file: {file.filename}")
 
                 # 调用DifyClient上传文件
-                try:
-                    file_info = await dify_client.upload_file(file_path=temp_file_path)
-                    file_info["file_name"] = file.filename # 保留原始文件名信息
-                    uploaded_files_info.append(file_info)
-                    logger.info(f"file uploaded successfully: {file.filename} -> file_id={file_info.get('id')}")
-
-                except Exception as e:
-                    logger.error(f"failed to upload file {file.filename}: {str(e)}")
+                resp = await dify_client.upload_file(file_path=temp_file_path)
+                if resp.status == "error":
+                    logger.error(f"failed to upload file {file.filename}: {resp.message}")
                     raise BaseBusinessException(code=CHAT_SERVICE_DIFY_UPLOAD_FILE_ERROR,
-                                                message=get_service_error_message(CHAT_SERVICE_DIFY_UPLOAD_FILE_ERROR))
+                                                message=get_service_error_message(CHAT_SERVICE_DIFY_UPLOAD_FILE_ERROR),
+                                                details=resp.message)
+                file_info = resp.data
+                file_info["file_name"] = file.filename # 保留原始文件名信息
+                uploaded_files_info.append(file_info)
+                logger.info(f"file uploaded success: {file.filename} -> file_id={file_info.get('id')}")
 
         finally:
             # 清理所有临时文件
@@ -376,7 +363,7 @@ class ChatHandlers:
 
         return UploadFilesToChatFlowPlatformResponse(file_info_list=uploaded_files_info)
     
-    def chatflow_block_mode(self, request: ChatFlowRequest, login_user: str, trace_id: str = None) -> ChatFlowBlockResponse:
+    async def chatflow_block_mode(self, request: ChatFlowRequest, login_user: str, trace_id: str = None) -> ChatFlowBlockResponse:
         """对话流平台阻塞模式处理"""
 
         if request.platform == ChatFlowPlatform.DIFY:
@@ -396,19 +383,20 @@ class ChatHandlers:
                 timeout=120,
             )
 
-            resp = dify_client.execute_chatflow_block(request.query, inputs=request.inputs, files=dify_files)
+            resp = await dify_client.execute_chatflow_block(request.query, inputs=request.inputs, files=dify_files)
             if resp.status == "error":
                 raise WorkflowException(
                     code=CHAT_SERVICE_DIFY_CHAT_ERROR,
                     message=get_service_error_message(CHAT_SERVICE_DIFY_CHAT_ERROR),
-                    details=resp)
+                    details=resp.model_dump())
 
             # 从dify响应中提取需要的字段
             dify_data = resp.data if isinstance(resp.data, dict) else {}
             return ChatFlowBlockResponse(
                 answer=dify_data.get("answer", ""),
                 conversation_id=dify_data.get("conversation_id", ""),
-                metadata=dify_data.get("metadata")
+                metadata=dify_data.get("metadata"),
+                message_id=dify_data.get("message_id", ""),
             )
 
         else:
@@ -471,11 +459,291 @@ class ChatHandlers:
                 timeout=120,
             )
             
-            return await dify_client.stop_task(task_id=request.task_id)
+            resp = await dify_client.stop_task(task_id=request.task_id)
+            if resp.status == "error":
+                logger.error(f"stop chatflow task failed error={resp.message} | TraceID: {trace_id}")
+                raise WorkflowException(
+                    code=CHAT_SERVICE_STOP_CHAT_TASK_ERROR,
+                    message=get_service_error_message(CHAT_SERVICE_STOP_CHAT_TASK_ERROR),
+                    details=resp.message
+                )
+            return resp.data
         else:
             raise ValidationException(f"暂不支持平台: {request.platform}")
-        
-        
+
+    async def add_feedbacks(self, request: AddFeedBacksRequest, login_user: str, trace_id: str = None):
+        """添加消息反馈"""
+        logger.info(f"add feedbacks - TraceID: {trace_id} message_id={request.message_id} rating={request.rating}")
+
+        if request.platform == ChatFlowPlatform.DIFY:
+            # 获取Dify API Key
+            dify_api_key = self._get_dify_chatflow_apikey_info(
+                user_id=login_user,
+                chatflow_name=request.chatflow_name
+            )["api_key"]
+
+            # 创建DifyClient实例
+            dify_client = DifyClient(
+                dify_url=self.app_config.dify_url,
+                access_api_key=dify_api_key,
+                workflow_name=request.chatflow_name,
+                user_id=request.platform_user,
+                timeout=120
+            )
+
+            # 调用DifyClient的消息反馈接口
+            resp = await dify_client.message_feedback(
+                message_id=request.message_id,
+                rating=request.rating.value,
+                user=request.platform_user,
+                content=request.content
+            )
+
+            if resp.status == "error":
+                logger.error(f"add feedbacks failed error={resp.message} | TraceID: {trace_id}")
+                raise WorkflowException(
+                    code=CHAT_SERVICE_ADD_FEEDBACK_ERROR,
+                    message=get_service_error_message(CHAT_SERVICE_ADD_FEEDBACK_ERROR),
+                    details=resp.message
+                )
+
+            return resp.data
+        else:
+            raise ValidationException(f"暂不支持平台: {request.platform}")
+
+    async def get_feedbacks(self, request: GetFeedBacksRequest, login_user: str, trace_id: str = None):
+        """获取APP的消息点赞和反馈"""
+        logger.info(f"get feedbacks - TraceID: {trace_id} page={request.page} limit={request.limit}")
+
+        if request.platform == ChatFlowPlatform.DIFY:
+            # 获取Dify API Key
+            dify_api_key = self._get_dify_chatflow_apikey_info(
+                user_id=login_user,
+                chatflow_name=request.chatflow_name
+            )["api_key"]
+
+            # 创建DifyClient实例
+            dify_client = DifyClient(
+                dify_url=self.app_config.dify_url,
+                access_api_key=dify_api_key,
+                workflow_name=request.chatflow_name,
+                user_id=request.platform_user,
+                timeout=120
+            )
+
+            # 调用DifyClient获取反馈接口
+            resp = await dify_client.get_app_feedbacks(
+                page=request.page,
+                limit=request.limit
+            )
+
+            if resp.status == "error":
+                logger.error(f"get feedbacks failed error={resp.message} | TraceID: {trace_id}")
+                raise WorkflowException(
+                    code=CHAT_SERVICE_GET_FEEDBACK_ERROR,
+                    message=get_service_error_message(CHAT_SERVICE_GET_FEEDBACK_ERROR),
+                    details=resp.message
+                )
+
+            return resp.data
+        else:
+            raise ValidationException(f"暂不支持平台: {request.platform}")
+
+    async def add_suggested_questions(self, request: AddSuggestedQuestionsRequest, login_user: str, trace_id: str = None):
+        """添加建议问题"""
+        logger.info(f"add suggested questions - TraceID: {trace_id} message_id={request.message_id}")
+
+        if request.platform == ChatFlowPlatform.DIFY:
+            # 获取Dify API Key
+            dify_api_key = self._get_dify_chatflow_apikey_info(
+                user_id=login_user,
+                chatflow_name=request.chatflow_name
+            )["api_key"]
+
+            # 创建DifyClient实例
+            dify_client = DifyClient(
+                dify_url=self.app_config.dify_url,
+                access_api_key=dify_api_key,
+                workflow_name=request.chatflow_name,
+                user_id=request.platform_user,
+                timeout=120
+            )
+
+            # 调用DifyClient获取建议问题接口
+            resp = await dify_client.get_suggested_questions(
+                message_id=request.message_id,
+                user=request.platform_user
+            )
+
+            if resp.status == "error":
+                logger.error(f"add suggested questions failed error={resp.message} | TraceID: {trace_id}")
+                raise WorkflowException(
+                    code=CHAT_SERVICE_ADD_SUGGESTED_QUESTION_ERROR,
+                    message=get_service_error_message(CHAT_SERVICE_ADD_SUGGESTED_QUESTION_ERROR),
+                    details=resp.message
+                )
+
+            return resp.data
+        else:
+            raise ValidationException(f"暂不支持平台: {request.platform}")
+
+    async def get_history_message(self, request: GetHistoryMessageRequest, login_user: str, trace_id: str = None) -> GetHistoryMessageResponse:
+        """获取单个会话的历史消息"""
+        logger.info(f"get history message - TraceID: {trace_id} conversation_id={request.conversation_id}")
+
+        if request.platform == ChatFlowPlatform.DIFY:
+            # 获取Dify API Key
+            dify_api_key = self._get_dify_chatflow_apikey_info(
+                user_id=login_user,
+                chatflow_name=request.chatflow_name
+            )["api_key"]
+
+            # 创建DifyClient实例
+            dify_client = DifyClient(
+                dify_url=self.app_config.dify_url,
+                access_api_key=dify_api_key,
+                workflow_name=request.chatflow_name,
+                user_id=request.platform_user,
+                timeout=120
+            )
+
+            # 调用DifyClient获取会话历史接口
+            resp = await dify_client.get_conversation_history(
+                conversation_id=request.conversation_id,
+                user=request.platform_user
+            )
+
+            if resp.status == "error":
+                logger.error(f"get history message failed error={resp.message} | TraceID: {trace_id}")
+                raise WorkflowException(
+                    code=CHAT_SERVICE_GET_HISTORY_MESSAGE_ERROR,
+                    message=get_service_error_message(CHAT_SERVICE_GET_HISTORY_MESSAGE_ERROR),
+                    details=resp.message
+                )
+            
+            dify_data = resp.data if isinstance(resp.data, dict) else {}
+            #return dify_data.get("data", [])
+            return GetHistoryMessageResponse(message_list=dify_data.get("data", []))
+        else:
+            raise ValidationException(f"暂不支持平台: {request.platform}")
+
+    async def get_conversation_list(self, request: GetConversationListRequest, login_user: str, trace_id: str = None):
+        """获取会话列表"""
+        logger.info(f"get conversation list - TraceID: {trace_id} last_id={request.last_id} limit={request.limit}")
+
+        if request.platform == ChatFlowPlatform.DIFY:
+            # 获取Dify API Key
+            dify_api_key = self._get_dify_chatflow_apikey_info(
+                user_id=login_user,
+                chatflow_name=request.chatflow_name
+            )["api_key"]
+
+            # 创建DifyClient实例
+            dify_client = DifyClient(
+                dify_url=self.app_config.dify_url,
+                access_api_key=dify_api_key,
+                workflow_name=request.chatflow_name,
+                user_id=request.platform_user,
+                timeout=120
+            )
+
+            # 调用DifyClient获取会话列表接口
+            resp = await dify_client.get_conversations(
+                user=request.platform_user,
+                last_id=request.last_id,
+                limit=request.limit
+            )
+
+            if resp.status == "error":
+                logger.error(f"get conversation list failed error={resp.message} | TraceID: {trace_id}")
+                raise WorkflowException(
+                    code=CHAT_SERVICE_GET_CONVERSATION_LIST_ERROR,
+                    message=get_service_error_message(CHAT_SERVICE_GET_CONVERSATION_LIST_ERROR),
+                    details=resp.message
+                )
+
+            return resp.data.get("data", [])
+        else:
+            raise ValidationException(f"暂不支持平台: {request.platform}")
+
+    async def delete_conversation(self, request: DeleteConversationRequest, login_user: str, trace_id: str = None):
+        """删除会话"""
+        logger.info(f"delete conversation - TraceID: {trace_id} conversation_id={request.conversation_id}")
+
+        if request.platform == ChatFlowPlatform.DIFY:
+            # 获取Dify API Key
+            dify_api_key = self._get_dify_chatflow_apikey_info(
+                user_id=login_user,
+                chatflow_name=request.chatflow_name
+            )["api_key"]
+
+            # 创建DifyClient实例
+            dify_client = DifyClient(
+                dify_url=self.app_config.dify_url,
+                access_api_key=dify_api_key,
+                workflow_name=request.chatflow_name,
+                user_id=request.platform_user,
+                timeout=120
+            )
+
+            # 调用DifyClient删除会话接口
+            resp = await dify_client.delete_conversation(
+                conversation_id=request.conversation_id,
+                user=request.platform_user
+            )
+
+            if resp.status == "error":
+                logger.error(f"delete conversation failed error={resp.message} | TraceID: {trace_id}")
+                raise WorkflowException(
+                    code=CHAT_SERVICE_DELETE_CONVERSATION_ERROR,
+                    message=get_service_error_message(CHAT_SERVICE_DELETE_CONVERSATION_ERROR),
+                    details=resp.message
+                )
+
+            return resp.data
+        else:
+            raise ValidationException(f"暂不支持平台: {request.platform}")
+
+    async def rename_conversation(self, request: RenameConversationRequest, login_user: str, trace_id: str = None):
+        """会话重命名"""
+        logger.info(f"rename conversation - TraceID: {trace_id} conversation_id={request.conversation_id} name={request.name}")
+
+        if request.platform == ChatFlowPlatform.DIFY:
+            # 获取Dify API Key
+            dify_api_key = self._get_dify_chatflow_apikey_info(
+                user_id=login_user,
+                chatflow_name=request.chatflow_name
+            )["api_key"]
+
+            # 创建DifyClient实例
+            dify_client = DifyClient(
+                dify_url=self.app_config.dify_url,
+                access_api_key=dify_api_key,
+                workflow_name=request.chatflow_name,
+                user_id=request.platform_user,
+                timeout=120
+            )
+
+            # 调用DifyClient重命名会话接口
+            resp = await dify_client.rename_conversation(
+                conversation_id=request.conversation_id,
+                name=request.name,
+                auto_generate=False,
+                user=request.platform_user
+            )
+
+            if resp.status == "error":
+                logger.error(f"rename conversation failed error={resp.message} | TraceID: {trace_id}")
+                raise WorkflowException(
+                    code=CHAT_SERVICE_RENAME_CONVERSATION_ERROR,
+                    message=get_service_error_message(CHAT_SERVICE_RENAME_CONVERSATION_ERROR),
+                    details=resp.message
+                )
+
+            return resp.data
+        else:
+            raise ValidationException(f"暂不支持平台: {request.platform}")
+
 # ========================工作流/对话流相关接口适配========================
 
         

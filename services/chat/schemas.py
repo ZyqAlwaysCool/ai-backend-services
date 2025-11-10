@@ -3,7 +3,7 @@ Description: Chat服务数据模型
 Author: zyq
 Date: 2025-08-26 11:18:33
 LastEditors: zyq
-LastEditTime: 2025-11-06 10:55:50
+LastEditTime: 2025-11-11 17:33:28
 '''
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -120,15 +120,6 @@ class DifyChatFlowFileInfo(BaseModel):
     type: str = Field(..., description="文件类型")
     upload_file_id: Optional[str] = Field("", description="上传的文件id, 仅当传输方式为local_file时填入")
     url: Optional[str] = Field("", description="文件url, 仅当传输方式为remote_url时填入")
-    
-
-# class DifyChatFlowRequest(BaseModel):
-#     """dify对话流请求模型, 不对外"""
-#     query: str = Field(..., description="用户的问题", min_length=1)
-#     chatflow_name: str = Field(..., description="对话流名称", min_length=1)
-#     inputs: dict = Field(default={}, description="输入参数")
-#     response_mode: DifyResponseMode = Field(DifyResponseMode.STREAM, description="响应模式, 默认流式")
-#     files: Optional[List[DifyChatFlowFileInfo]] = Field(None, description="上传的文件列表")
 
 # ========================兼容dify数据模型========================
 
@@ -142,7 +133,7 @@ class ChatFlowRequest(BaseModel):
     query: str = Field(..., description="用户的问题", min_length=1)
     chatflow_name: str = Field(..., description="对话流名称", min_length=1)
     platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
-    platform_user: str = Field(default="test_user_1", description="平台用户标识")
+    platform_user: str = Field(..., description="平台用户标识")
     inputs: dict = Field(default={}, description="输入参数")
     response_mode: ChatFlowResponseMode = Field(ChatFlowResponseMode.STREAM, description="响应模式, 默认流式")
     files: Optional[List[UploadFileInfo]] = Field(None, description="上传的文件列表")
@@ -155,7 +146,7 @@ class UploadFilesToChatFlowPlatformRequest(BaseModel):
 
 class UploadFilesToChatFlowPlatformResponse(BaseModel):
     """上传文件到对话流平台响应模型"""
-    file_info_list: List[Dict] = Field([], description="文件ID列表")
+    file_info_list: List[Dict] = Field(default_factory=list, description="文件ID列表")
 
 class StopChatTaskRequest(BaseModel):
     """停止对话任务请求模型"""
@@ -168,6 +159,71 @@ class ChatFlowBlockResponse(BaseModel):
     """对话流阻塞模式响应模型"""
     answer: str = Field(..., description="AI回复内容")
     conversation_id: str = Field(..., description="会话ID")
+    message_id: str = Field(..., description="消息ID")
     metadata: Optional[Dict[str, Any]] = Field(None, description="元数据信息")
 
+class FeedBackRating(str, Enum):
+    """消息反馈评分"""
+    LIKE = "like"
+    DISLIKE = "dislike"
+
+class AddFeedBacksRequest(BaseModel):
+    """消息反馈(点赞)"""
+    message_id: str = Field(..., description="消息ID")
+    rating: FeedBackRating = Field(..., description="评分")
+    platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
+    platform_user: str = Field(..., description="用户标识")
+    chatflow_name: str = Field(..., description="对话流名称", min_length=1)
+    content: Optional[str] = Field(default="", description="反馈内容")
+
+class GetFeedBacksRequest(BaseModel):
+    """获取APP的消息点赞和反馈"""
+    platform_user: str = Field(..., description="用户标识")
+    platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
+    chatflow_name: str = Field(..., description="对话流名称", min_length=1)
+    page: Optional[int] = Field(default=1, description="分页", gt=0)
+    limit: Optional[int] = Field(default=20, description="分页大小", gt=0)
+
+class AddSuggestedQuestionsRequest(BaseModel):
+    """添加建议问题"""
+    platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
+    platform_user: str = Field(..., description="用户标识")
+    chatflow_name: str = Field(..., description="对话流名称", min_length=1)
+    message_id: str = Field(..., description="消息ID")
+
+class GetHistoryMessageRequest(BaseModel):
+    """获取单个会话的历史消息"""
+    conversation_id: str = Field(..., description="会话ID")
+    platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
+    platform_user: str = Field(..., description="用户标识")
+    chatflow_name: str = Field(..., description="对话流名称", min_length=1)
+    first_id: Optional[str] = Field(None, description="当前页第一条聊天记录的ID")
+    limit: Optional[int] = Field(default=20, description="分页大小", gt=0)
+
+class GetHistoryMessageResponse(BaseModel):
+    """获取单个会话的历史消息响应模型"""
+    message_list: List[Dict] = Field(default=[], description="消息列表")
+
+class GetConversationListRequest(BaseModel):
+    """获取会话列表"""
+    platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
+    platform_user: str = Field(..., description="用户标识")
+    chatflow_name: str = Field(..., description="对话流名称", min_length=1)
+    last_id: Optional[str] = Field(default="", description="当前页最后一条聊天记录的ID")
+    limit: Optional[int] = Field(default=20, description="分页大小", gt=0, lt=100)
+
+class DeleteConversationRequest(BaseModel):
+    """删除会话"""
+    conversation_id: str = Field(..., description="会话ID")
+    platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
+    platform_user: str = Field(..., description="用户标识")
+    chatflow_name: str = Field(..., description="对话流名称", min_length=1)
+
+class RenameConversationRequest(BaseModel):
+    """会话重命名"""
+    conversation_id: str = Field(..., description="会话ID")
+    platform: ChatFlowPlatform = Field(ChatFlowPlatform.DIFY, description="对话流平台")
+    platform_user: str = Field(..., description="用户标识")
+    chatflow_name: str = Field(..., description="对话流名称", min_length=1)
+    name: str = Field(..., description="会话名称", min_length=1)
 # ========================工作流/对话流相关接口适配========================

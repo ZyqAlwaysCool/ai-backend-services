@@ -3,7 +3,7 @@ Description: Chat服务API路由定义
 Author: zyq
 Date: 2025-09-03 18:29:16
 LastEditors: zyq
-LastEditTime: 2025-11-06 10:23:19
+LastEditTime: 2025-11-11 17:36:21
 '''
 
 import uuid
@@ -16,7 +16,7 @@ from core.schemas.base_resp_model_define import BaseResponse
 from core.config.error_codes import *
 from core.exceptions import ValidationException, BaseBusinessException
 from .schemas import (
-    ChatRequest, 
+    ChatRequest,
     AddChatFlowApiKeyRequest,
     ChatFlowRequest,
     UploadFilesToChatFlowPlatformRequest,
@@ -24,6 +24,13 @@ from .schemas import (
     StopChatTaskRequest,
     ChatFlowPlatform,
     ChatFlowResponseMode,
+    AddFeedBacksRequest,
+    GetFeedBacksRequest,
+    AddSuggestedQuestionsRequest,
+    GetHistoryMessageRequest,
+    GetConversationListRequest,
+    DeleteConversationRequest,
+    RenameConversationRequest,
 )
 from .handlers import ChatHandlers
 
@@ -171,7 +178,7 @@ async def chatflow(request: ChatFlowRequest, http_request: Request):
     
     else:
         # 非流式响应处理
-        response = handlers.chatflow_block_mode(request, http_request.state.user_id, trace_id)
+        response = await handlers.chatflow_block_mode(request, http_request.state.user_id, trace_id)
     
         return BaseResponse.success(
             data=response.dict(),
@@ -212,14 +219,126 @@ async def stop_chatflow_task(request: StopChatTaskRequest, http_request: Request
     """停止对话流任务接口"""
     trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
     logger.info(f"Stop ChatFlow task request started | TraceID: {trace_id}")
-    
+
     handlers = check_service_initialized(http_request)
 
     response = await handlers.stop_chatflow_task(request, http_request.state.user_id, trace_id)
-    
+
     logger.info(f"Stop ChatFlow task request completed | TraceID: {trace_id}")
-    
+
     return BaseResponse.success(
-        data=response.dict(),
+        data=response,
+        trace_id=trace_id
+    )
+
+@chat_router.post("/add-chatflow-feedbacks", response_model=BaseResponse, summary="添加消息反馈")
+async def add_feedbacks(request: AddFeedBacksRequest, http_request: Request):
+    """添加消息反馈接口"""
+    trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
+    logger.info(f"Add feedbacks request started | TraceID: {trace_id}")
+
+    handlers = check_service_initialized(http_request)
+
+    response = await handlers.add_feedbacks(request, http_request.state.user_id, trace_id)
+
+    logger.info(f"Add feedbacks request completed | TraceID: {trace_id}")
+    return BaseResponse.success(
+        data=response,
+        trace_id=trace_id
+    )
+
+@chat_router.post("/get-chaflow-feedbacks", response_model=BaseResponse, summary="获取消息反馈")
+async def get_feedbacks(request: GetFeedBacksRequest, http_request: Request):
+    """获取APP的消息点赞和反馈接口"""
+    trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
+    logger.info(f"Get feedbacks request started | TraceID: {trace_id}")
+
+    handlers = check_service_initialized(http_request)
+
+    response = await handlers.get_feedbacks(request, http_request.state.user_id, trace_id)
+
+    logger.info(f"Get feedbacks request completed | TraceID: {trace_id}")
+    return BaseResponse.success(
+        data=response,
+        trace_id=trace_id
+    )
+
+@chat_router.post("/add-chatflow-suggested-questions", response_model=BaseResponse, summary="添加建议问题")
+async def add_suggested_questions(request: AddSuggestedQuestionsRequest, http_request: Request):
+    """添加建议问题接口"""
+    trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
+    logger.info(f"Add suggested questions request started | TraceID: {trace_id}")
+
+    handlers = check_service_initialized(http_request)
+
+    response = await handlers.add_suggested_questions(request, http_request.state.user_id, trace_id)
+
+    logger.info(f"Add suggested questions request completed | TraceID: {trace_id}")
+    return BaseResponse.success(
+        data=response,
+        trace_id=trace_id
+    )
+
+@chat_router.post("/get-chatflow-history-message", response_model=BaseResponse, summary="获取历史消息")
+async def get_history_message(request: GetHistoryMessageRequest, http_request: Request):
+    """获取单个会话的历史消息接口"""
+    trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
+    logger.info(f"Get history message request started | TraceID: {trace_id}")
+
+    handlers = check_service_initialized(http_request)
+
+    response = await handlers.get_history_message(request, http_request.state.user_id, trace_id)
+
+    logger.info(f"Get history message request completed | TraceID: {trace_id}")
+    return BaseResponse.success(
+        data=response.model_dump(),
+        trace_id=trace_id
+    )
+
+@chat_router.post("/get-chatflow-conversation-list", response_model=BaseResponse, summary="获取会话列表")
+async def get_conversation_list(request: GetConversationListRequest, http_request: Request):
+    """获取会话列表接口"""
+    trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
+    logger.info(f"Get conversation list request started | TraceID: {trace_id}")
+
+    handlers = check_service_initialized(http_request)
+
+    response = await handlers.get_conversation_list(request, http_request.state.user_id, trace_id)
+
+    logger.info(f"Get conversation list request completed | TraceID: {trace_id}")
+    return BaseResponse.success(
+        data=response,
+        trace_id=trace_id
+    )
+
+@chat_router.post("/delete-chatflow-conversation", response_model=BaseResponse, summary="删除会话")
+async def delete_conversation(request: DeleteConversationRequest, http_request: Request):
+    """删除会话接口"""
+    trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
+    logger.info(f"Delete conversation request started | TraceID: {trace_id}")
+
+    handlers = check_service_initialized(http_request)
+
+    response = await handlers.delete_conversation(request, http_request.state.user_id, trace_id)
+
+    logger.info(f"Delete conversation request completed | TraceID: {trace_id}")
+    return BaseResponse.success(
+        data=response,
+        trace_id=trace_id
+    )
+
+@chat_router.post("/rename-chatflow-conversation", response_model=BaseResponse, summary="会话重命名")
+async def rename_conversation(request: RenameConversationRequest, http_request: Request):
+    """会话重命名接口"""
+    trace_id = getattr(http_request.state, 'trace_id', str(uuid.uuid4()))
+    logger.info(f"Rename conversation request started | TraceID: {trace_id}")
+
+    handlers = check_service_initialized(http_request)
+
+    response = await handlers.rename_conversation(request, http_request.state.user_id, trace_id)
+
+    logger.info(f"Rename conversation request completed | TraceID: {trace_id}")
+    return BaseResponse.success(
+        data=response,
         trace_id=trace_id
     )
