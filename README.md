@@ -75,6 +75,7 @@ python -m app
 - mongodb
 - redis
 - qdrant
+
 若非docker部署, 需自行找安装教程. 若使用docker部署, 可参考docker-compose.yml, 里面有各依赖项的基础镜像.
 
 ### 2. 用户认证
