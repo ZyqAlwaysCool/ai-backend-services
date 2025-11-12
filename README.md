@@ -101,7 +101,7 @@ curl -X POST "http://localhost:20000/auth/login" \
 **调用 API 示例：**
 ```bash
 # 对话服务
-curl -X POST "http://localhost:20000/chat/completion" \
+curl -X POST "http://localhost:20000/chat/chat" \
   -H "Authorization: Bearer your_token" \
   -H "Content-Type: application/json" \
   -d '{"query": "你好", "model": "qwen3-32B"}'
