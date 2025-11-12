@@ -112,3 +112,7 @@ curl -X POST "http://localhost:20000/chat/completion" \
 - `configs/services/services.yml`: 服务模块配置
 - `configs/llm_providers/openai.yml`: LLM 提供商配置
 可以通过修改配置文件来启用/禁用服务或调整参数。
+
+retrieval服务需要额外下载模型:
+- hanlp
+- Qwen3-Embedding-0__6B
