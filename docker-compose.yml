@@ -28,7 +28,7 @@ services:
       QDRANT_PORT: 6333
       NVIDIA_VISIBLE_DEVICES: "2"
       NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
-      DIFY_URL: "http://10.10.20.106:8891/v1"
+      DIFY_URL: "http://{your_dify_ip}/v1"
     networks:
       - ai_backend_services_network
 

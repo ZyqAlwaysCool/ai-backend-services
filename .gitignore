@@ -12,3 +12,5 @@ AGENTS.md
 plan.md
 nohup.out
 models/*
+examples/
+test_pipeline.md
