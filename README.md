@@ -14,27 +14,30 @@
 - 完整的请求链路追踪
 
 **当前服务模块：**
-- **Chat Service**: 基于大语言模型的对话服务，支持单轮和多轮对话，适配dify等低代码平台api
-- **Document Service**: 文档处理服务，支持 PDF 解析、格式转换、文本提取等
-- **Retrieval Service**: 向量检索服务，支持知识库构建和语义搜索
+- **Chat Service**: 基于大语言模型的对话服务，支持单轮和多轮对话，内置 dify 与 coze低代码平台client, 适配平台的api接口.
+- **Document Service**: 文档处理服务，支持 PDF 解析、格式转换、文本提取等.
+- **Retrieval Service**: 向量检索服务，支持知识库构建和语义搜索；支持本地（Qdrant + Embedding）与 Dify 两类 provider. 其中, Dify部分使用 `core/workflow_clients/dify_kb_client.py` 进行知识库/文档/分段管理, 集成dify知识库管理接口; 本地部分需要提前配置hanlp和embedding模型, 旨在基于本地模型服务构建基础rag并做向量召回.
+- **mcp service**: 支持 MCP 工具编排，内置 supervisor/plan-react 等模式，提供工具同步、列表、提问流式输出、请求追踪审计能力
+
+**各服务的业务代码:** 见`services`目录, 各服务相对独立, 可通过配置选择加载的服务类型.
 
 ## 架构介绍
 
 ### 整体架构
 
 ```
-┌─────────────────────────────────────┐
-│              FastAPI App            │  应用入口
-├─────────────────────────────────────┤
-│          Service Registry           │  服务注册发现
-├─────────────┬─────────────┬─────────┤
-│     Chat    │   Document  │Retrieval│  业务服务层
-├─────────────┼─────────────┼─────────┤
-│   Handlers  │   Routers   │ Schemas │  业务逻辑层
-├─────────────┴─────────────┴─────────┤
-│           Core Modules              │  基础设施层
-│ Auth│Config│Exception│Middleware    │
-└─────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│              FastAPI App                      │  应用入口
+├───────────────────────────────────────────────┤
+│          Service Registry                     │  服务注册发现
+├─────────────┬─────────────┬─────────┬─────────┤
+│     Chat    │   Document  │Retrieval│   MCP   │  业务服务层
+├─────────────┼─────────────┼─────────┼─────────┤
+│   Handlers  │   Routers   │ Schemas │ Agents  │  业务逻辑层
+├─────────────┴─────────────┴─────────┴─────────┤
+│           Core Modules                        │  基础设施层
+│ Auth│Config│Exception│Middleware              │
+└───────────────────────────────────────────────┘
 ```
 
 ### 核心设计模式
@@ -56,8 +59,13 @@
 ├── services/                 # 业务服务
 │   ├── chat/                 # 对话服务
 │   ├── document/             # 文档服务
-│   └── retrieval/            # 检索服务
+│   ├── retrieval/            # 检索服务
+│   └── mcp/                  # MCP 工具编排服务
 └── configs/                  # 配置文件
+    ├── app/                  # 应用配置
+    ├── services/             # 业务服务配置
+    ├── llm_providers/        # LLM 提供商配置
+    └── mcp/                  # MCP 运行时配置
 ```
 
 ## 快速开始
