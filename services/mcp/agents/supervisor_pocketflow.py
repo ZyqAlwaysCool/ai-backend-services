@@ -1,0 +1,437 @@
+'''
+Description: 基于 PocketFlow 的 Supervisor 编排器
+Author: zyq
+Date: 2025-12-24 10:30:00
+LastEditors: zyq
+LastEditTime: 2025-12-29 16:04:15
+'''
+import asyncio
+import json
+import time
+from typing import Any, AsyncGenerator, Dict, List
+
+from services.mcp.agents.base import BaseOrchestrator, OrchestratorFactory
+from services.mcp.agents.stream_models import StreamEvent
+from services.mcp.schemas import AgentMode
+from services.mcp.tools.tool_executor import ToolExecutor
+from pocketflow import AsyncFlow, AsyncNode
+
+
+class _DecideNode(AsyncNode):
+    """决策节点：调用模型决定调用工具或结束"""
+
+    def __init__(self, orchestrator, event_queue, tool_map, start_ts, max_rounds, per_llm_timeout):
+        super().__init__()
+        self.orchestrator = orchestrator
+        self.event_queue = event_queue
+        self.tool_map = tool_map
+        self.start_ts = start_ts
+        self.max_rounds = max_rounds
+        self.per_llm_timeout = per_llm_timeout
+
+    async def prep_async(self, shared: Dict[str, Any]):
+        self.shared = shared
+        if self.orchestrator._time_exceeded(self.start_ts):
+            await self.event_queue.put(
+                StreamEvent(
+                    type="error",
+                    trace_id=self.orchestrator.trace_id,
+                    agent_mode=self.orchestrator.agent_mode.value,
+                    content="超出总执行时长限制",
+                    step=len(shared["executed"]) + 1
+                )
+            )
+            shared["abort"] = True
+        return None
+
+    async def exec_async(self, _):
+        shared: Dict[str, Any] = self.shared
+        if shared.get("abort"):
+            return {"action": "FINISH"}
+        if shared["decision_round"] >= self.max_rounds:
+            await self.event_queue.put(
+                StreamEvent(
+                    type="error",
+                    trace_id=self.orchestrator.trace_id,
+                    agent_mode=self.orchestrator.agent_mode.value,
+                    content="超出最大步数限制",
+                    step=len(shared["executed"]) + 1
+                )
+            )
+            shared["abort"] = True
+            return {"action": "FINISH"}
+        history_summary = json.dumps(shared["executed"], ensure_ascii=False)
+        shared["decision_round"] += 1
+        decision = await self.orchestrator._retry_call(
+            self.orchestrator._decide_next,
+            history_summary,
+            timeout_ms=self.per_llm_timeout
+        )
+        return decision
+
+    async def post_async(self, shared: Dict[str, Any], prep_res, decision):
+        if shared.get("abort"):
+            return "finish"
+        action = str(decision.get("action", "")).upper()
+        if action == "FINISH":
+            return "finish"
+        if action != "CALL":
+            await self.event_queue.put(
+                StreamEvent(
+                    type="error",
+                    trace_id=self.orchestrator.trace_id,
+                    agent_mode=self.orchestrator.agent_mode.value,
+                    content="LLM决策结果无效, 缺少 CALL/FINISH 指令. 请检查提示词设置或更换模型.",
+                    step=len(shared["executed"]) + 1,
+                    detail={"decision": decision}
+                )
+            )
+            shared["abort"] = True
+            return "finish"
+        tool_name = decision.get("tool_name") # 从决策结果中获取需要调用的工具名称
+        if not tool_name or tool_name not in self.tool_map:
+            # 校验决策结果的合法性, 是否为有效mcp工具
+            await self.event_queue.put(
+                StreamEvent(
+                    type="error",
+                    trace_id=self.orchestrator.trace_id,
+                    agent_mode=self.orchestrator.agent_mode.value,
+                    content=f"模型选择的工具不在白名单: {tool_name}",
+                    step=len(shared["executed"]) + 1,
+                    detail={"decision": decision}
+                )
+            )
+            shared["abort"] = True
+            return "finish"
+        # 在共享上下文保存工具调用信息
+        shared["curr_tool"] = tool_name
+        shared["curr_args"] = decision.get("args", {})
+        return "call"
+
+
+class _ExecuteNode(AsyncNode):
+    """工具执行节点：调用 MCP 工具并落地事件"""
+
+    def __init__(self, orchestrator, event_queue, tool_map, per_tool_timeout):
+        super().__init__()
+        self.orchestrator = orchestrator
+        self.event_queue = event_queue
+        self.tool_map = tool_map
+        self.per_tool_timeout = per_tool_timeout
+
+    async def prep_async(self, shared: Dict[str, Any]):
+        tool_name = shared.get("curr_tool")
+        args = shared.get("curr_args", {})
+        if shared.get("abort") or not tool_name:
+            return None
+        step = len(shared["executed"]) + 1
+        await self.event_queue.put(
+            StreamEvent(
+                type="tool_start",
+                trace_id=self.orchestrator.trace_id,
+                agent_mode=self.orchestrator.agent_mode.value,
+                tool_name=tool_name,
+                step=step,
+                input=args
+            )
+        )
+        return tool_name, args
+
+    async def exec_async(self, inputs):
+        if not inputs:
+            return {"__skip__": True}
+        tool_name, args = inputs
+        executor = ToolExecutor(self.tool_map[tool_name], self.orchestrator.server_cfg)
+        return await self.orchestrator._retry_call(
+            executor.call,
+            args,
+            timeout_ms=self.per_tool_timeout
+        )
+
+    async def exec_fallback_async(self, inputs, exc):
+        return {"__error__": str(exc)}
+
+    async def post_async(self, shared: Dict[str, Any], prep_res, exec_res):
+        if not prep_res:
+            shared["abort"] = True
+            return "error"
+        tool_name, args = prep_res
+        step = len(shared["executed"]) + 1
+        if exec_res.get("__error__"):
+            # mcp工具执行失败
+            shared["executed"].append({
+                "tool_name": tool_name,
+                "args": args,
+                "error": exec_res["__error__"]
+            })
+            await self.event_queue.put(
+                StreamEvent(
+                    type="tool_end",
+                    trace_id=self.orchestrator.trace_id,
+                    agent_mode=self.orchestrator.agent_mode.value,
+                    tool_name=tool_name,
+                    step=step,
+                    output=exec_res["__error__"],
+                    status="error",
+                    detail={"error": exec_res["__error__"]}
+                )
+            )
+            shared["abort"] = True
+            return "error"
+        shared["executed"].append({
+            "tool_name": tool_name,
+            "args": args,
+            "result": exec_res.get("result", {})
+        })
+        await self.event_queue.put(
+            StreamEvent(
+                type="tool_end",
+                trace_id=self.orchestrator.trace_id,
+                agent_mode=self.orchestrator.agent_mode.value,
+                tool_name=tool_name,
+                step=step,
+                output=exec_res.get("result", {}),
+                latency_ms=exec_res.get("latency_ms"),
+                status="success"
+            )
+        )
+        return "decide"
+
+
+class _SummarizeNode(AsyncNode):
+    """汇总节点：生成最终回答并产出 delta/final 事件"""
+
+    def __init__(self, orchestrator, event_queue, per_llm_timeout):
+        super().__init__()
+        self.orchestrator = orchestrator
+        self.event_queue = event_queue
+        self.per_llm_timeout = per_llm_timeout
+
+    async def prep_async(self, shared: Dict[str, Any]):
+        return shared.get("executed", [])
+
+    async def exec_async(self, executed: List[Dict[str, Any]]):
+        step = len(executed) + 1
+        if self.orchestrator.stream_final:
+            summary_parts: List[str] = []
+            async for chunk in self.orchestrator._summarize_stream(executed, timeout_ms=self.per_llm_timeout):
+                summary_parts.append(chunk)
+                await self.event_queue.put(
+                    StreamEvent(
+                        type="delta",
+                        trace_id=self.orchestrator.trace_id,
+                        agent_mode=self.orchestrator.agent_mode.value,
+                        content=chunk,
+                        step=step
+                    )
+                )
+            return "".join(summary_parts)
+        return await self.orchestrator._summarize(executed, timeout_ms=self.per_llm_timeout)
+
+    async def post_async(self, shared: Dict[str, Any], prep_res, answer: str):
+        step = len(prep_res) + 1
+        await self.event_queue.put(
+            StreamEvent(
+                type="final",
+                trace_id=self.orchestrator.trace_id,
+                agent_mode=self.orchestrator.agent_mode.value,
+                content=answer,
+                step=step
+            )
+        )
+
+
+class SupervisorPocketflowOrchestrator(BaseOrchestrator):
+    """PocketFlow 版 Supervisor，多 Agent 编排"""
+
+    def __init__(
+        self,
+        agent_mode: AgentMode,
+        tool_bundle: List[Dict[str, Any]],
+        limits: Dict[str, Any],
+        trace_id: str,
+        llm_adapter: Any,
+        llm_params: Dict[str, Any],
+        server_cfg: Dict[str, Any],
+        retry_cfg: Dict[str, Any],
+        query: str,
+        prompt: str,
+        stream_final: bool = False
+    ):
+        super().__init__(agent_mode, tool_bundle, limits, trace_id, llm_adapter, llm_params, server_cfg, retry_cfg, query, prompt, stream_final=stream_final)
+
+    async def _decide_next(self, history_summary: str, timeout_ms: int | None = None) -> Dict[str, Any]:
+        tool_desc = "\n".join([
+            f"- {item['tool_name']}: {item.get('description', '')} | 入参schema={json.dumps(item.get('input_schema', {}), ensure_ascii=False)}"
+            for item in self.tool_bundle
+        ])
+        sys_prompt = (
+            "你是编排Supervisor。根据上下文决定下一步要调用的工具及参数，或返回FINISH结束。\n"
+            "务必严格遵守工具入参schema，字段名必须完全一致，不要使用入参schema中未声明的字段名。\n"
+            "输出JSON：{\"action\": \"CALL\"|\"FINISH\", \"tool_name\": \"...\", \"args\": {...}, \"reason\": \"...\"}"
+        )
+        user_prompt = (
+            f"业务提示词：{self.prompt}\n"
+            f"用户问题：{self.query}\n"
+            f"历史摘要：{history_summary}\n"
+            f"可用工具：\n{tool_desc}\n"
+            f"剩余步数：{self.limits.get('max_steps', 6)}\n"
+            "请输出JSON，不要添加多余文本。"
+        )
+        messages = [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        resp = await self.llm_adapter.chat_completion(
+            messages=messages,
+            temperature=self.llm_params.get("temperature", 0.7),
+            max_tokens=self.llm_params.get("max_tokens", 512),
+            timeout_ms=timeout_ms
+        )
+        parsed = self._safe_json_loads(resp.answer)
+        if not parsed or "action" not in parsed:
+            raise ValueError("Supervisor决策解析失败")
+        return parsed
+
+    async def _summarize(self, executed: List[Dict[str, Any]], timeout_ms: int | None = None) -> str:
+        sys_prompt = "你是结果汇总助手，请基于多轮工具调用结果，输出简洁中文回答。"
+        exec_text = json.dumps(executed, ensure_ascii=False)
+        user_prompt = (
+            f"业务提示词：{self.prompt}\n"
+            f"用户问题：{self.query}\n"
+            f"调用链路结果：{exec_text}\n"
+            "请给出最终回答。"
+        )
+        messages = [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        resp = await self.llm_adapter.chat_completion(
+            messages=messages,
+            temperature=self.llm_params.get("temperature", 0.7),
+            max_tokens=self.llm_params.get("max_tokens", 512),
+            timeout_ms=timeout_ms
+        )
+        return resp.answer
+
+    async def _summarize_stream(self, executed: List[Dict[str, Any]], timeout_ms: int | None = None):
+        sys_prompt = "你是结果汇总助手，请基于多轮工具调用结果，输出简洁中文回答。"
+        exec_text = json.dumps(executed, ensure_ascii=False)
+        user_prompt = (
+            f"业务提示词：{self.prompt}\n"
+            f"用户问题：{self.query}\n"
+            f"调用链路结果：{exec_text}\n"
+            "请给出最终回答。"
+        )
+        messages = [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        async for chunk in self.llm_adapter.chat_completion_stream(
+            messages=messages,
+            temperature=self.llm_params.get("temperature", 0.7),
+            max_tokens=self.llm_params.get("max_tokens", 512),
+            timeout_ms=timeout_ms
+        ):
+            yield chunk
+
+    async def _run_flow(self, shared: Dict[str, Any], event_queue: asyncio.Queue, start_ts: float):
+        tool_map = self._tool_map()
+        per_tool_timeout = self.limits.get("per_tool_timeout_ms")
+        per_llm_timeout = self.limits.get("per_llm_timeout_ms")
+        max_rounds = int(self.limits.get("max_steps", 10))
+
+        decide = _DecideNode(self, event_queue, tool_map, start_ts, max_rounds, per_llm_timeout)
+        execute = _ExecuteNode(self, event_queue, tool_map, per_tool_timeout)
+        summarize = _SummarizeNode(self, event_queue, per_llm_timeout)
+
+        decide - "call" >> execute
+        decide - "finish" >> summarize
+        execute - "decide" >> decide
+        execute - "error" >> summarize
+
+        flow = AsyncFlow(start=decide)
+        await flow.run_async(shared)
+
+    async def run_stream(self) -> AsyncGenerator[StreamEvent, None]:
+        tool_map = self._tool_map()
+        max_tools = int(self.limits.get("max_tools_per_request", len(tool_map)))
+        start_ts = time.time()
+        final_sent = False
+
+        if not tool_map:
+            yield StreamEvent(
+                type="error",
+                trace_id=self.trace_id,
+                agent_mode=self.agent_mode.value,
+                content="本次请求无可用工具",
+                step=0
+            )
+            return
+        if len(tool_map) > max_tools:
+            yield StreamEvent(
+                type="error",
+                trace_id=self.trace_id,
+                agent_mode=self.agent_mode.value,
+                content=f"本次请求工具数量超过限制({max_tools})",
+                step=0
+            )
+            return
+
+        yield StreamEvent(
+            type="plan",
+            trace_id=self.trace_id,
+            agent_mode=self.agent_mode.value,
+            detail={"mode": "supervisor", "tools": list(tool_map.keys())},
+            step=0
+        )
+
+        event_queue: asyncio.Queue = asyncio.Queue()
+        shared: Dict[str, Any] = {
+            "executed": [],
+            "decision_round": 0,
+            "abort": False
+        }
+        flow_task = asyncio.create_task(self._run_flow(shared, event_queue, start_ts))
+
+        try:
+            while True:
+                # 从队列中获取StreamEvent事件
+                if flow_task.done() and event_queue.empty():
+                    break
+                try:
+                    event = await asyncio.wait_for(event_queue.get(), timeout=0.1)
+                    if event.type == "final":
+                        final_sent = True
+                    yield event
+                except asyncio.TimeoutError:
+                    continue
+        except Exception as exc:
+            yield StreamEvent(
+                type="error",
+                trace_id=self.trace_id,
+                agent_mode=self.agent_mode.value,
+                content="PocketFlow 编排执行异常",
+                step=len(shared["executed"]) + 1,
+                detail={"error": str(exc)}
+            )
+        finally:
+            if not flow_task.done():
+                flow_task.cancel()
+            error_from_flow = None
+            try:
+                await flow_task
+            except Exception as exc:
+                error_from_flow = exc
+            if error_from_flow and not final_sent:
+                yield StreamEvent(
+                    type="error",
+                    trace_id=self.trace_id,
+                    agent_mode=self.agent_mode.value,
+                    content="PocketFlow 编排执行异常",
+                    step=len(shared["executed"]) + 1,
+                    detail={"error": str(error_from_flow)}
+                )
+
+
+OrchestratorFactory.register(AgentMode.SUPERVISOR, SupervisorPocketflowOrchestrator)

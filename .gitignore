@@ -10,7 +10,8 @@ test_files/
 CLAUDE.md
 AGENTS.md
 plan.md
-nohup.out
-models/*
-examples/
 test_pipeline.md
+nohup.out
+examples/
+docs/
+.venv/

@@ -1,12 +1,13 @@
 '''
 Description: 认证服务
 Author: zyq
-Date: 2025-08-22 15:14:08
+Date: 2025-11-12 09:31:14
 LastEditors: zyq
-LastEditTime: 2025-09-18 09:11:23
+LastEditTime: 2026-01-12 17:06:16
 '''
+
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from loguru import logger
 
@@ -60,7 +61,7 @@ class AuthService:
             return None
         
         # 生成token
-        expires_at = datetime.utcnow() + timedelta(hours=self.token_expire_hours)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=self.token_expire_hours)
         payload = {
             "user_id": user.user_id,
             "username": user.username,
@@ -83,7 +84,7 @@ class AuthService:
             payload = jwt.decode(token, self.secret_key, algorithms=["HS256"])
             return TokenPayload(**payload)
         except jwt.ExpiredSignatureError:
-            logger.warning("Token expired")
+            logger.warning("Token expired.")
             return None
         except jwt.InvalidTokenError as e:
             logger.warning(f"Invalid token: {str(e)}")

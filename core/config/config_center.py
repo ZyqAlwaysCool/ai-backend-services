@@ -64,7 +64,7 @@ class AppConfig(BaseModel):
     embedding_model_path: str = Field("models/Qwen3-Embedding-0___6B", description="Embedding模型路径(相对于项目根目录)")
     embedding_batch_size: int = Field(8, description="Embedding批处理大小", ge=1, le=128)
     embedding_device: str = Field("cpu", description="Embedding模型运行设备(cpu/cuda/cuda:0/cuda:1等)")
-    dify_url: str = Field("http://172.16.32.88:8891/v1", description="Dify平台URL")
+    dify_url: str = Field("http://172.16.32.88:port/v1", description="Dify平台URL")
 
     class Config:
         frozen = True
@@ -87,6 +87,9 @@ class ChatConfig(BaseServiceConfig):
     rate_limits: Dict[str, int] = Field(default_factory=dict, description="限流配置")
     chat_db_name: str = Field("ai_backend_services_chat", description="数据库名")
     chat_apikey_collection_name: str = Field("chat_apikey", description="存储各chatflow平台的API Key")
+    chat_oauth_collection_name: str = Field("chat_oauth", description="存储coze oauth配置")
+    coze_auth_mode: str = Field("api_key", description="coze鉴权方式(api_key|oauth)")
+    coze_oauth_token_ttl: int = Field(3600, description="coze oauth token有效期(秒)")
 
 class DocumentConfig(BaseServiceConfig):
     """Document服务配置"""
@@ -117,6 +120,22 @@ class MultimodalConfig(BaseServiceConfig):
     pass
 
 
+class MCPConfig(BaseServiceConfig):
+    """MCP服务配置"""
+    mcp_db_name: str = Field("ai_backend_services_mcp", description="MCP数据库名")
+    tool_collection_name: str = Field("mcp_tools", description="工具集合名")
+    run_collection_name: str = Field("mcp_runs", description="运行记录集合名")
+    run_step_collection_name: str = Field("mcp_run_steps", description="运行步骤集合名")
+    default_agent_mode: str = Field("single_agent_tool_choice", description="默认编排模式")
+    allowed_agent_modes: List[str] = Field(default_factory=list, description="允许的编排模式")
+    max_tools_per_request: int = Field(5, description="单次请求最大工具数", ge=1, le=20)
+    limits: Dict[str, int] = Field(default_factory=dict, description="运行限制")
+    cache: Dict[str, int] = Field(default_factory=dict, description="缓存配置")
+    server: Dict[str, str] = Field(default_factory=dict, description="服务器配置")
+    logging: Dict[str, Any] = Field(default_factory=dict, description="日志开关")
+    streaming: Dict[str, Any] = Field(default_factory=dict, description="流式事件开关")
+
+
 class ServicesConfig(BaseModel):
     """服务配置模型"""
     enabled: List[str] = Field(..., description="启用的服务列表")
@@ -124,6 +143,7 @@ class ServicesConfig(BaseModel):
     document: Optional[DocumentConfig] = Field(None, description="Document服务配置")
     retrieval: Optional[RetrievalConfig] = Field(None, description="Retrieval服务配置")
     multimodal: Optional[MultimodalConfig] = Field(None, description="Multimodal服务配置")
+    mcp: Optional[MCPConfig] = Field(None, description="MCP服务配置")
     
     class Config:
         frozen = True
@@ -187,6 +207,9 @@ def load_services_config() -> ServicesConfig:
                                                             retrieval_config.get('max_file_size', 52428800)))
             retrieval_config['max_files_per_request'] = int(os.getenv('MAX_FILES_PER_REQUEST', 
                                                                     retrieval_config.get('max_files_per_request', 10)))
+        if 'mcp' in services_data:
+            mcp_config = services_data['mcp']
+            mcp_config['mcp_db_name'] = os.getenv('MCP_DB_NAME', mcp_config.get('mcp_db_name', 'ai_backend_services_mcp'))
         
         return ServicesConfig(**services_data)
         
@@ -198,6 +221,30 @@ def load_services_config() -> ServicesConfig:
 def get_services_config() -> ServicesConfig:
     """获取服务配置（带缓存）"""
     return load_services_config()
+
+
+class MCPRuntimeConfig(BaseModel):
+    """MCP运行时配置"""
+    mcp: Dict[str, Any]
+
+
+@lru_cache(maxsize=1)
+def load_mcp_runtime_config() -> MCPRuntimeConfig:
+    """加载MCP运行时配置"""
+    cfg_path = Path(__file__).parent.parent.parent / "configs" / "mcp" / "mcp.yml"
+    if not cfg_path.exists():
+        raise ConfigValidationError(f"MCP配置文件不存在: {cfg_path}")
+    try:
+        with open(cfg_path, encoding='utf-8') as f:
+            raw_config = yaml.safe_load(f)
+        return MCPRuntimeConfig(**raw_config)
+    except Exception as e:
+        raise ConfigValidationError(f"MCP配置加载失败: {str(e)}")
+
+
+def get_mcp_runtime_config() -> MCPRuntimeConfig:
+    """获取MCP运行时配置"""
+    return load_mcp_runtime_config()
 
 
 @lru_cache(maxsize=10)
@@ -324,7 +371,7 @@ def load_app_config() -> AppConfig:
         config_dict['embedding_model_path'] = os.getenv('EMBEDDING_MODEL_PATH', config_dict.get('embedding_model_path', 'models/Qwen3-Embedding-4B'))
         config_dict['embedding_batch_size'] = int(os.getenv('EMBEDDING_BATCH_SIZE', config_dict.get('embedding_batch_size', 8)))
         config_dict['embedding_device'] = os.getenv('EMBEDDING_DEVICE', config_dict.get('embedding_device', 'cpu'))
-        config_dict['dify_url'] = os.getenv('DIFY_URL', config_dict.get('dify_url', 'http://172.16.32.88:8891/v1'))
+        config_dict['dify_url'] = os.getenv('DIFY_URL', config_dict.get('dify_url', 'http://172.16.32.88:port/v1'))
         
         return AppConfig(**config_dict)
     except Exception as e:

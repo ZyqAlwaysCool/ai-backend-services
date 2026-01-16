@@ -65,17 +65,19 @@
 ### 1. 环境准备
 
 ```bash
+# 安装uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
 # 安装依赖
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 
 # 启动应用
-python -m app
+uv run python -m app
 ```
 除了python的依赖库外, 还需要额外配置依赖项:
 - mongodb
 - redis
 - qdrant
-
 若非docker部署, 需自行找安装教程. 若使用docker部署, 可参考docker-compose.yml, 里面有各依赖项的基础镜像.
 
 ### 2. 用户认证
@@ -113,7 +115,3 @@ curl -X POST "http://localhost:20000/chat/chat" \
 - `configs/services/services.yml`: 服务模块配置
 - `configs/llm_providers/openai.yml`: LLM 提供商配置
 可以通过修改配置文件来启用/禁用服务或调整参数。
-
-retrieval服务需要额外下载模型:
-- hanlp
-- Qwen3-Embedding-0__6B

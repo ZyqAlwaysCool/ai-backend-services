@@ -3,7 +3,7 @@ Description: 文档服务API路由定义
 Author: zyq
 Date: 2025-09-18 15:43:43
 LastEditors: zyq
-LastEditTime: 2025-09-19 15:28:16
+LastEditTime: 2026-01-05 16:51:32
 '''
 import uuid
 from typing import Union
@@ -173,7 +173,7 @@ async def query_convert_task(convert_task_id: str, http_request: Request):
             message=get_service_error_message(DOCUMENT_SERVICE_INIT_ERROR)
         )
     
-    if not convert_task_id.startswith(DocumentTaskTypePrefix.DOCUMENT_CONVERT_TASK.value):
+    if not convert_task_id.startswith(DocumentTaskTypePrefix.CONVERT_TASK.value):
         raise ValidationException(get_service_error_message(DOCUMENT_SERVICE_INVALID_TASK_TYPE_ERROR))
     
     # 调用业务逻辑

@@ -4,17 +4,14 @@ services:
   enabled:
     - chat
     - document
-    # - retrieval
+    - retrieval
+    - mcp
     # - multimodal  # 暂未启用
 
   # Chat服务配置 - 提供对话相关接口
   chat:
     enabled: true
     version: "1.0.0"
-    # 启用的端点
-    endpoints:
-      chat: true      # 非流式对话
-      chat_stream: true  # 流式对话
     # 引用的模型名称（具体配置在 llm_providers 中）
     enabled_models:
       - qwen3-32B
@@ -26,15 +23,15 @@ services:
     # mongodb配置
     chat_db_name: "ai_backend_services_chat"
     chat_apikey_collection_name: "chat_apikey" # 存储各chatflow平台的API Key
+    chat_oauth_collection_name: "chat_oauth"   # 存储coze oauth配置
+    # dify/coze等平台特殊配置
+    coze_auth_mode: "api_key"  # api_key 或 oauth
+    coze_oauth_token_ttl: 3600  # OAuth token有效期(秒)
 
   # 文档处理服务配置
   document:
     enabled: true
     version: "1.0.0"
-    endpoints:
-      parse_document: true
-      convert_format: true
-      extract_content: true
     supported_formats:
       - pdf
       - docx
@@ -47,13 +44,6 @@ services:
   retrieval:
     enabled: true
     version: "1.0.0"
-    endpoints:
-      upload_files: true
-      clean_document: true
-      # 其他端点待后续添加
-      # vector_search: true
-      # hybrid_search: true
-      # qa_retrieval: true
     # MongoDB配置
     retrieval_db_name: "ai_backend_services_retrieval"
     retrieval_document_collection_name: "retrieval_documents"
@@ -68,6 +58,7 @@ services:
       sync_threshold: 20          # 同步处理阈值：≤20个文档同步处理，>20个异步处理
       chunk_batch_size: 10        # 异步处理时的分批大小
       single_doc_timeout_seconds: 30  # 单个文档清洗超时时间(秒)
+    kb_credential_collection_name: "kb_credentials"  # 知识库apikey凭证存储表名
 
   # 多模态服务配置（暂未启用）
   multimodal:
@@ -77,3 +68,47 @@ services:
       image_analysis: true
       image_to_text: true
       audio_processing: false
+
+  # MCP服务配置
+  mcp:
+    enabled: true
+    version: "1.0.0"
+    mcp_db_name: "ai_backend_services_mcp"
+    tool_collection_name: "mcp_tools"
+    run_collection_name: "mcp_runs"
+    run_step_collection_name: "mcp_run_steps"
+    default_agent_mode: "supervisor"
+    allowed_agent_modes:
+      - "supervisor"
+    max_tools_per_request: 5
+    limits:
+      max_steps: 6
+      max_total_duration_ms: 60000
+      per_tool_timeout_ms: 20000
+      per_llm_timeout_ms: 15000
+    cache:
+      meta_ttl_seconds: 600
+      client_ttl_seconds: 600
+    server:
+      host_env: "MCP_SERVER_HOST"
+      port_env: "MCP_SERVER_PORT"
+      default_host: "10.10.20.69"
+      default_port: "28080"
+      api_key_header: "X-API-Key"
+    logging:
+      enable_run_log: true
+      enable_step_log: true
+    streaming:
+      emit_tool_events: true
+      emit_plan_events: true
+    llm:
+      provider: "openai"
+      model_name: "qwen3-32B"
+      base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      api_key: ""
+      temperature: 0.7
+      timeout: 30
+      max_tokens: 1024
+    retry:
+      max_attempts: 3
+      backoff_ms: 500

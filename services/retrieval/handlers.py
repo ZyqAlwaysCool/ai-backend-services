@@ -3,14 +3,14 @@ Description: Retrieval服务业务逻辑处理器
 Author: zyq
 Date: 2025-09-15 17:19:58
 LastEditors: zyq
-LastEditTime: 2025-10-11 10:26:27
+LastEditTime: 2025-12-04 16:37:10
 '''
 
 import os
 import tempfile
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
-from fastapi import UploadFile
+from fastapi import UploadFile, Request
 from loguru import logger
 from bson import ObjectId
 from pathlib import Path
@@ -21,18 +21,53 @@ from haystack.components.embedders import SentenceTransformersTextEmbedder
 from haystack_integrations.components.retrievers.qdrant import QdrantEmbeddingRetriever
 
 from core.storage.mongo_storage import MongoStorage
+from ..services_err_codes import (
+    RETRIEVAL_SERVICE_CREDENTIAL_MISSING,
+    RETRIEVAL_SERVICE_INVALID_CREDENTIAL,
+    RETRIEVAL_SERVICE_USER_CTX_MISSING,
+    RETRIEVAL_SERVICE_ADD_OR_UPDATE_CREDENTIAL_ERROR,
+    RETRIEVAL_SERVICE_MULTIPLE_DOC_FOUND,
+    RETRIEVAL_SERVICE_DOC_NOT_FOUND,
+    get_service_error_message,
+)
 from core.config.config_center import get_app_config
+from core.exceptions import BaseBusinessException
 from core.tasks import TaskManagerFactory
 
 from .components.document_processor import DocumentProcessor
 from .components.document_cleaner import DocumentCleaner
 from .managers.knowledge_manager import KnowledgeBaseManager
 from .task_managers.knowledge_base_build_task_manager import KnowledgeBaseBuildTaskManager
+from .providers.factory import KnowledgeBaseProviderFactory
+from .managers.kb_mapping_store import KBMappingStore
+from .managers.kb_credential_store import KBCredentialStore, KBCredential
+from core.storage.mongo_storage import MongoStorage
 from .schemas import (
     RetrievalUploadResponse, FileUploadResult,
     KnowledgeBaseBuildResponse, DocumentCleanSettings,
     RetrievalTaskTypePrefix, RetrievalQueryResponse, SearchResult,
-    KnowledgeBaseQueryResponse, KnowledgeBaseInfo
+    KnowledgeBaseQueryResponse, KnowledgeBaseInfo,
+    KnowledgeBaseCreateRequest,
+    KnowledgeBaseInfoExternal,
+    KnowledgeBaseListResponse,
+    KnowledgeBaseDocumentCreateRequest,
+    KnowledgeBaseDocumentUpdateRequest,
+    KnowledgeBaseDocumentListResponse,
+    KnowledgeBaseDocumentInfo,
+    KnowledgeBaseIndexStatusResponse,
+    KnowledgeBaseSegmentCreateRequest,
+    KnowledgeBaseSegmentUpdateRequest,
+    KnowledgeBaseSegmentListResponse,
+    KnowledgeBaseSegmentInfo,
+    KnowledgeBaseMetadataAssignRequest,
+    KnowledgeBaseMetadataAssignByNameRequest,
+    KnowledgeBaseMetadataListResponse,
+    KnowledgeBaseMetadataField,
+    KBCredentialCreateRequest,
+    KBCredentialInfo,
+    KBCredentialListResponse,
+    KnowledgeBaseProviderEnum,
+    CredentialStatusEnum,
 )
 
 
@@ -61,13 +96,23 @@ class RetrievalHandlers:
         self.knowledge_manager = None
         # self.document_stores = {}  # 缓存每个知识库的DocumentStore
         self.build_task_manager = None  # 知识库构建任务管理器
+        self.provider_factory = None
+        self.kb_mapping_store = None
+        self.kb_credential_store = None
+        self._app_config = get_app_config()
     
     async def initialize(self):
-        """轻量级初始化Retrieval服务处理器"""
+        """初始化Retrieval服务处理器"""
         # 初始化基础组件
         self.document_processor = DocumentProcessor(self.config)
         self.document_cleaner = DocumentCleaner(self.config)
         self.knowledge_manager = KnowledgeBaseManager(self.config)
+        # provider 工厂 & 映射存储
+        mongo = MongoStorage(db_name=self.config.get('retrieval_db_name', 'ai_backend_services_retrieval'))
+        self.kb_mapping_store = KBMappingStore(mongo)
+        cred_col = self.config.get('kb_credential_collection_name', 'kb_credentials')
+        self.kb_credential_store = KBCredentialStore(mongo, cred_col)
+        self.provider_factory = KnowledgeBaseProviderFactory(self.kb_mapping_store, self.config)
         
         # 创建任务管理后端
         queue_backend, storage_backend = TaskManagerFactory.create_default_backends()
@@ -80,6 +125,401 @@ class RetrievalHandlers:
         )
         
         logger.info("Retrieval handlers初始化完成")
+
+    def _build_user_ctx(self, request: Request) -> Dict[str, Any]:
+        """从请求上下文构建 user_context, 供 provider 取凭证等"""
+        return {
+            "user_id": getattr(request.state, "user_id", None),
+            "username": getattr(request.state, "username", None),
+        }
+
+    def _ensure_credentials(self, cred: Optional[dict]):
+        if not cred or not cred.get("api_key"):
+            raise BaseBusinessException(
+                code=RETRIEVAL_SERVICE_CREDENTIAL_MISSING,
+                message=get_service_error_message(RETRIEVAL_SERVICE_CREDENTIAL_MISSING),
+            )
+
+    def _build_provider_context(self, provider_value: str, user_ctx: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        为指定provider构建上下文
+        """
+        ctx = dict(user_ctx or {})
+        if provider_value == KnowledgeBaseProviderEnum.DIFY.value:
+            # dify需要注入url和apikey信息
+            cred = self.kb_credential_store.get(user_id=ctx.get("user_id"), provider=KnowledgeBaseProviderEnum.DIFY)
+            self._ensure_credentials(cred)
+            if not self._app_config.dify_url:
+                raise BaseBusinessException(
+                    code=RETRIEVAL_SERVICE_CREDENTIAL_MISSING,
+                    message=get_service_error_message(RETRIEVAL_SERVICE_CREDENTIAL_MISSING)
+                )
+            ctx = {**ctx, "dify_kb_url": self._app_config.dify_url, "dify_kb_api_key": cred.get("api_key")}
+        return ctx
+
+    async def _find_doc_ids_by_name(
+        self,
+        kb_name: str,
+        doc_name: str,
+        provider_ins,
+        ctx: Dict[str, Any],
+        allow_multiple: bool = False,
+        allow_not_found: bool = False,
+    ) -> List[str]:
+        """按文档名查找 doc_id 列表，处理分页"""
+        matched_doc_ids: List[str] = []
+        page = 1
+        limit = 50
+        while True:
+            docs = await provider_ins.list_documents(kb_name, page, limit, ctx)
+            for item in docs.items:
+                if item.doc_name == doc_name:
+                    matched_doc_ids.append(item.doc_id)
+            if not docs.has_more or not docs.items:
+                break
+            page += 1
+        if not allow_multiple and len(matched_doc_ids) > 1:
+            raise BaseBusinessException(
+                code=RETRIEVAL_SERVICE_MULTIPLE_DOC_FOUND,
+                message=get_service_error_message(RETRIEVAL_SERVICE_MULTIPLE_DOC_FOUND),
+            )
+        if not matched_doc_ids:
+            if allow_not_found:
+                return []
+            raise BaseBusinessException(
+                code=RETRIEVAL_SERVICE_DOC_NOT_FOUND,
+                message=get_service_error_message(RETRIEVAL_SERVICE_DOC_NOT_FOUND),
+            )
+        return matched_doc_ids
+
+    # ============== 统一知识库接口 ==============
+    async def create_kb(self, request: KnowledgeBaseCreateRequest, provider: KnowledgeBaseProviderEnum, user_ctx: Dict[str, Any]) -> KnowledgeBaseInfoExternal:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get(request.name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        return await provider_ins.create_kb(request, ctx)
+
+    async def list_kb(self, page: int, limit: int, provider: KnowledgeBaseProviderEnum, user_ctx: Dict[str, Any]) -> KnowledgeBaseListResponse:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get("", provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        return await provider_ins.list_kb(page, limit, ctx)
+
+    async def delete_kb(self, kb_name: str, provider: KnowledgeBaseProviderEnum, user_ctx: Dict[str, Any]) -> None:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get("", provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        await provider_ins.delete_kb(kb_name, ctx)
+
+    async def create_kb_document(
+        self,
+        kb_name: str,
+        provider: KnowledgeBaseProviderEnum,
+        req: KnowledgeBaseDocumentCreateRequest,
+        upload_options: Optional[Dict[str, Any]],
+        trace_id: str,
+        user_ctx: Dict[str, Any],
+    ) -> KnowledgeBaseDocumentInfo:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get(kb_name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        ctx["trace_id"] = trace_id
+        return await provider_ins.create_document(kb_name, req, ctx)
+
+    async def update_kb_document(
+        self,
+        kb_name: str,
+        provider: KnowledgeBaseProviderEnum,
+        req: KnowledgeBaseDocumentUpdateRequest,
+        trace_id: str,
+        user_ctx: Dict[str, Any],
+    ) -> KnowledgeBaseDocumentInfo:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get(kb_name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        ctx["trace_id"] = trace_id
+        doc_ids = await self._find_doc_ids_by_name(kb_name, req.doc_name, provider_ins, ctx)
+        doc_id = doc_ids[0]
+        return await provider_ins.update_document(kb_name, doc_id, req, ctx)
+
+    async def list_kb_documents(
+        self,
+        kb_name: str,
+        provider: KnowledgeBaseProviderEnum,
+        page: int,
+        limit: int,
+        user_ctx: Dict[str, Any],
+    ) -> KnowledgeBaseDocumentListResponse:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get(kb_name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        return await provider_ins.list_documents(kb_name, page, limit, ctx)
+
+    async def delete_kb_document(
+        self,
+        kb_name: str,
+        doc_name: str,
+        provider: KnowledgeBaseProviderEnum,
+        user_ctx: Dict[str, Any],
+    ) -> None:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get(kb_name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        doc_ids = await self._find_doc_ids_by_name(kb_name, doc_name, provider_ins, ctx, True)
+        for doc_id in doc_ids:
+            await provider_ins.delete_document(kb_name, doc_id, ctx)
+
+    async def get_kb_index_status(
+        self,
+        kb_name: str,
+        batch_id: str,
+        provider: KnowledgeBaseProviderEnum,
+        user_ctx: Dict[str, Any],
+    ) -> KnowledgeBaseIndexStatusResponse:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get(kb_name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        return await provider_ins.get_index_status(kb_name, batch_id, ctx)
+
+    async def add_kb_segments(
+        self,
+        kb_name: str,
+        doc_name: str,
+        provider: KnowledgeBaseProviderEnum,
+        req: KnowledgeBaseSegmentCreateRequest,
+        user_ctx: Dict[str, Any],
+    ) -> KnowledgeBaseSegmentListResponse:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get(kb_name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        doc_ids = await self._find_doc_ids_by_name(kb_name, doc_name, provider_ins, ctx)
+        doc_id = doc_ids[0]
+        return await provider_ins.add_segments(kb_name, doc_id, req, ctx)
+
+    async def list_kb_segments(
+        self,
+        kb_name: str,
+        doc_name: str,
+        provider: KnowledgeBaseProviderEnum,
+        page: int,
+        limit: int,
+        user_ctx: Dict[str, Any],
+    ) -> KnowledgeBaseSegmentListResponse:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get(kb_name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        doc_ids = await self._find_doc_ids_by_name(kb_name, doc_name, provider_ins, ctx)
+        doc_id = doc_ids[0]
+        return await provider_ins.list_segments(kb_name, doc_id, page, limit, ctx)
+
+    async def update_kb_segment(
+        self,
+        kb_name: str,
+        doc_name: str,
+        segment_id: str,
+        provider: KnowledgeBaseProviderEnum,
+        req: KnowledgeBaseSegmentUpdateRequest,
+        user_ctx: Dict[str, Any],
+    ) -> KnowledgeBaseSegmentInfo:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get(kb_name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        doc_ids = await self._find_doc_ids_by_name(kb_name, doc_name, provider_ins, ctx)
+        doc_id = doc_ids[0]
+        return await provider_ins.update_segment(kb_name, doc_id, segment_id, req, ctx)
+
+    async def delete_kb_segment(
+        self,
+        kb_name: str,
+        doc_name: str,
+        segment_id: str,
+        provider: KnowledgeBaseProviderEnum,
+        user_ctx: Dict[str, Any],
+    ) -> None:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get(kb_name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        doc_ids = await self._find_doc_ids_by_name(
+            kb_name, doc_name, provider_ins, ctx, allow_not_found=True
+        )
+        if not doc_ids:
+            logger.info("delete_kb_segment: 文档未找到，视为已删除 kb={} doc={} segment={}".format(kb_name, doc_name, segment_id))
+            return
+        doc_id = doc_ids[0]
+        await provider_ins.delete_segment(kb_name, doc_id, segment_id, ctx)
+
+    async def add_kb_metadata_field(
+        self,
+        kb_name: str,
+        provider: KnowledgeBaseProviderEnum,
+        field_type: str,
+        name: str,
+        user_ctx: Dict[str, Any],
+    ) -> KnowledgeBaseMetadataField:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get(kb_name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        return await provider_ins.add_metadata_field(kb_name, field_type, name, ctx)
+
+    async def update_kb_metadata_field(
+        self,
+        kb_name: str,
+        provider: KnowledgeBaseProviderEnum,
+        old_meta_field_name: str,
+        new_meta_field_name: str,
+        user_ctx: Dict[str, Any],
+    ) -> KnowledgeBaseMetadataField:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get(kb_name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        meta_list = await provider_ins.list_metadata_fields(kb_name, ctx)
+        matched = [item for item in meta_list.fields if item.name == old_meta_field_name]
+        if not matched:
+            raise ValueError(f"未找到名称为 {old_meta_field_name} 的元数据字段")
+        if len(matched) > 1:
+            raise ValueError(f"存在多个同名元数据字段 {old_meta_field_name}，请先处理重名再更新")
+        metadata_id = matched[0].id
+        return await provider_ins.update_metadata_field(kb_name, metadata_id, new_meta_field_name, ctx)
+
+    async def delete_kb_metadata_field(
+        self,
+        kb_name: str,
+        provider: KnowledgeBaseProviderEnum,
+        meta_field_name: str,
+        user_ctx: Dict[str, Any],
+    ) -> None:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get(kb_name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        meta_list = await provider_ins.list_metadata_fields(kb_name, ctx)
+        matched = [item for item in meta_list.fields if item.name == meta_field_name]
+        if not matched:
+            raise ValueError(f"未找到名称为 {meta_field_name} 的元数据字段")
+        if len(matched) > 1:
+            raise ValueError(f"存在多个同名元数据字段 {meta_field_name}，请先处理重名再删除")
+        metadata_id = matched[0].id
+        await provider_ins.delete_metadata_field(kb_name, metadata_id, ctx)
+
+    async def list_kb_metadata_fields(
+        self,
+        kb_name: str,
+        provider: KnowledgeBaseProviderEnum,
+        user_ctx: Dict[str, Any],
+    ) -> KnowledgeBaseMetadataListResponse:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get(kb_name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        return await provider_ins.list_metadata_fields(kb_name, ctx)
+
+    async def toggle_kb_built_in_metadata(
+        self,
+        kb_name: str,
+        provider: KnowledgeBaseProviderEnum,
+        action: str,
+        user_ctx: Dict[str, Any],
+    ) -> None:
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        provider_ins = self.provider_factory.get(kb_name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        await provider_ins.toggle_built_in_metadata(kb_name, action, ctx)
+
+    async def assign_kb_documents_metadata(
+        self,
+        req: KnowledgeBaseMetadataAssignByNameRequest,
+        user_ctx: Dict[str, Any],
+    ) -> None:
+        provider_value = req.provider.value if hasattr(req.provider, "value") else req.provider
+        provider_ins = self.provider_factory.get(req.kb_name, provider_value)
+        ctx = self._build_provider_context(provider_value, user_ctx)
+        # 取元数据列表，按名称映射 id
+        meta_list = await provider_ins.list_metadata_fields(req.kb_name, ctx)
+        meta_name_to_id = {item.name: item.id for item in meta_list.fields}
+        operation_data: List[Dict[str, Any]] = []
+        for doc_item in req.documents:
+            doc_name = doc_item.get("doc_name")
+            metadata_list = doc_item.get("metadata_list", [])
+            if not doc_name or not metadata_list:
+                raise ValueError("文档名称或 metadata_list 缺失")
+            doc_ids = await self._find_doc_ids_by_name(
+                req.kb_name, doc_name, provider_ins, ctx, allow_multiple=False
+            )
+            doc_id = doc_ids[0]
+            converted_meta = []
+            for meta in metadata_list:
+                meta_name = meta.get("name")
+                meta_value = meta.get("value")
+                if not meta_name:
+                    raise ValueError("元数据 name 不能为空")
+                meta_id = meta_name_to_id.get(meta_name)
+                if not meta_id:
+                    raise ValueError(f"未找到名称为 {meta_name} 的元数据字段")
+                converted_meta.append({"id": meta_id, "value": meta_value, "name": meta_name})
+            operation_data.append({"document_id": doc_id, "metadata_list": converted_meta})
+        assign_req = KnowledgeBaseMetadataAssignRequest(operation_data=operation_data)
+        await provider_ins.assign_documents_metadata(req.kb_name, assign_req, ctx)
+
+    # ===== 凭证管理 =====
+    def _require_user(self, user_ctx: Dict[str, Any]):
+        if not user_ctx.get("user_id"):
+            raise BaseBusinessException(
+                code=RETRIEVAL_SERVICE_USER_CTX_MISSING,
+                message=get_service_error_message(RETRIEVAL_SERVICE_USER_CTX_MISSING)
+            )
+
+    async def upsert_kb_credential(self, req: KBCredentialCreateRequest, user_ctx: Dict[str, Any]) -> KBCredentialInfo:
+        self._require_user(user_ctx)
+        # 对 dify 强制要求配置 DIFY_URL
+        provider_value = req.provider.value if hasattr(req.provider, "value") else req.provider
+        if provider_value == KnowledgeBaseProviderEnum.DIFY.value:
+            if not getattr(self._app_config, "dify_url", None):
+                raise BaseBusinessException(
+                    code=RETRIEVAL_SERVICE_CREDENTIAL_MISSING,
+                    message=get_service_error_message(RETRIEVAL_SERVICE_CREDENTIAL_MISSING)
+                )
+        cred = KBCredential(
+            user_id=user_ctx.get("user_id"),
+            provider=provider_value,
+            name=req.name,
+            api_key=req.api_key,
+            workspace_id=req.workspace_id,
+            is_default=req.is_default,
+            description=req.description,
+            status=CredentialStatusEnum.ACTIVE.value,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        self.kb_credential_store.upsert(cred)
+        stored = self.kb_credential_store.get(user_id=user_ctx.get("user_id"), provider=provider_value, name=req.name)
+        if stored:
+            stored.pop("_id", None)
+            return KBCredentialInfo(**stored)
+        else:
+            raise BaseBusinessException(
+                code=RETRIEVAL_SERVICE_ADD_OR_UPDATE_CREDENTIAL_ERROR,
+                message=get_service_error_message(RETRIEVAL_SERVICE_ADD_OR_UPDATE_CREDENTIAL_ERROR)
+            )
+
+    async def list_kb_credentials(self, provider: Optional[KnowledgeBaseProviderEnum], user_ctx: Dict[str, Any]) -> KBCredentialListResponse:
+        self._require_user(user_ctx)
+        provider_value = provider.value if provider and hasattr(provider, "value") else provider
+        docs = self.kb_credential_store.list(user_id=user_ctx.get("user_id"), provider=provider_value)
+        items = []
+        for d in docs:
+            d.pop("_id", None)
+            items.append(KBCredentialInfo(**d))
+        return KBCredentialListResponse(items=items)
+
+    async def delete_kb_credential(self, provider: KnowledgeBaseProviderEnum, name: str, user_ctx: Dict[str, Any]) -> None:
+        self._require_user(user_ctx)
+        provider_value = provider.value if hasattr(provider, "value") else provider
+        ok = self.kb_credential_store.soft_delete(
+            user_id=user_ctx.get("user_id"), provider=provider_value, name=name
+        )
+        if not ok:
+            raise BaseBusinessException(
+                code=RETRIEVAL_SERVICE_INVALID_CREDENTIAL,
+                message=get_service_error_message(RETRIEVAL_SERVICE_INVALID_CREDENTIAL)
+            )
     
     # def _get_document_store(self, knowledge_base_name: str) -> QdrantDocumentStore:
     #     """获取或创建知识库对应的QdrantDocumentStore"""
@@ -365,17 +805,16 @@ class RetrievalHandlers:
         
     def _get_knowledge_base(self, kb_name_with_version: str, trace_id: str = None):
         logger.info(f"Get knowledge base - TraceID: {trace_id}, KB_with_version: {kb_name_with_version}")
-        app_config = get_app_config()
         document_store = None
         
         document_store = QdrantDocumentStore(
-            host=app_config.qdrant_host,
-            port=app_config.qdrant_port,
+            host=self._app_config.qdrant_host,
+            port=self._app_config.qdrant_port,
             index=kb_name_with_version,  # 使用版本化索引
-            embedding_dim=app_config.embedding_dim,
+            embedding_dim=self._app_config.embedding_dim,
             return_embedding=True,
             wait_result_from_api=True,
-            timeout=app_config.qdrant_timeout
+            timeout=self._app_config.qdrant_timeout
         )
         
         return document_store
@@ -515,10 +954,8 @@ class RetrievalHandlers:
         qdrant_index = self._get_qdrant_index_name(knowledge_base_name, kb_version)
         logger.info(f"Using Qdrant index: {qdrant_index}")
         
-        app_config = get_app_config()
-        
         project_root = Path(__file__).parent.parent.parent
-        embedder_model_absolute_path = str(project_root / app_config.embedding_model_path)
+        embedder_model_absolute_path = str(project_root / self._app_config.embedding_model_path)
         
         text_embedder = SentenceTransformersTextEmbedder(model=embedder_model_absolute_path)
         text_embedder.warm_up()

@@ -5,8 +5,8 @@ stream: true
 
 models:
   - name: qwen3-32B
-    base_url: http://{LLM_PROVIDER_HOST}/v1
+    base_url: http://host:port/v1
     api_key: token-qwen3
   - name: qwen3-14B
-    base_url: http://{LLM_PROVIDER_HOST}/v1
+    base_url: http://host:port/v1
     api_key: token-qwen3

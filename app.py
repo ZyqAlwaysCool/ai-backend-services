@@ -3,7 +3,7 @@ Description: AI服务平台主入口
 Author: zyq
 Date: 2025-09-29 16:06:55
 LastEditors: zyq
-LastEditTime: 2025-11-06 15:20:02
+LastEditTime: 2025-12-26 09:49:07
 '''
 import os
 from pathlib import Path
@@ -16,6 +16,8 @@ os.environ['HANLP_HOME'] = str(hanlp_cache_dir)
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi_limiter import FastAPILimiter
+import redis.asyncio as redis
 
 from core.logging import setup_logger
 from core.config import validate_config_on_startup, get_app_config, load_app_config, get_services_config
@@ -113,6 +115,15 @@ async def lifespan(app: FastAPI):
         # 不终止应用启动，但记录错误
         logger.warning("Continuing without task worker, batch processing unavailable")
     
+    # 启动fastapi-limiter
+    rate_limiter_conn_url = f"redis:{app_config.redis_port}:{app_config.redis_host}/{app_config.redis_db}"
+    logger.info(f"init fastapi-limiter with redis url: {rate_limiter_conn_url}")
+    await FastAPILimiter.init(redis.from_url(
+        rate_limiter_conn_url,
+        encoding="utf-8",
+        decode_responses=True,
+    ))
+    
     logger.info("AI service platform started successfully")
     yield
     
@@ -127,6 +138,10 @@ async def lifespan(app: FastAPI):
         for service in service_registry.get_enabled_services().values():
             if hasattr(service, 'shutdown'):
                 await service.shutdown()
+        
+        # 关闭limiter
+        if FastAPILimiter.redis:
+            await FastAPILimiter.close()
     except Exception as e:
         logger.error(f"Service shutdown error error={str(e)}")
 
@@ -282,6 +297,5 @@ if __name__ == "__main__":
         "app:app",
         host=host,
         port=port,
-        #reload=True,
         reload=False,
     )

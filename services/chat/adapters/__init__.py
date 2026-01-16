@@ -12,3 +12,4 @@ from .openai_adapter import OpenAIProtocolAdapter
 ProtocolAdapterFactory.register_adapter('qwen', OpenAIProtocolAdapter)
 ProtocolAdapterFactory.register_adapter('deepseek', OpenAIProtocolAdapter)
 ProtocolAdapterFactory.register_adapter('llama', OpenAIProtocolAdapter)
+ProtocolAdapterFactory.register_adapter('openai', OpenAIProtocolAdapter)

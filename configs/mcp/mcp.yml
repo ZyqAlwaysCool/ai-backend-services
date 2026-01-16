@@ -1,0 +1,66 @@
+# MCP 服务配置（默认值，可按环境调整）
+mcp:
+  enabled: true
+  version: "1.0.0"
+
+  # 默认编排模式与可用模式
+  default_agent_mode: "single_tool"
+  allowed_agent_modes:
+    - "single_tool"   # 单轮工具直连
+    - "plan_react"    # 计划-执行
+    - "supervisor"    # 多轮监督
+
+  # 每次请求的工具数量与运行限制
+  max_tools_per_request: 5
+  limits:
+    max_steps: 10                  # 编排器最大调用步数（含 LLM 决策轮次）
+    max_total_duration_ms: 60000  # 单请求最大执行时间
+    per_tool_timeout_ms: 20000    # 单次工具调用超时
+    per_llm_timeout_ms: 15000     # 单次 LLM 决策超时
+  
+  # 接口频控配置
+  rate_limit:
+    times_per_day: 100 # 按日限制调用次数
+    reset_interval_sec: 86400  # 每日调用次数重置间隔
+
+
+  # 模式细项（保持简洁，优先复用通用 limits）
+  supervisor:
+    max_rounds: 10
+    allow_retry_on_tool_error: false
+
+  # 缓存配置（工具元数据与客户端实例）
+  cache:
+    meta_ttl_seconds: 600
+    client_ttl_seconds: 600
+
+  # MCP 服务器地址来源（优先环境变量）
+  # server:
+  #   host_env: "MCP_SERVER_HOST"
+  #   port_env: "MCP_SERVER_PORT"
+  #   default_host: "10.10.20.69"
+  #   default_port: "28080"
+  #   api_key_header: "X-API-Key"
+
+  # 日志与流式事件
+  logging:
+    enable_run_log: true
+    enable_step_log: true
+  streaming:
+    emit_tool_events: true
+    emit_plan_events: true
+
+  # LLM配置（默认仅支持OpenAI协议）
+  llm:
+    provider: "openai"
+    model_name: "qwen3-max"
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    api_key: "${MODEL_API_KEY}"
+    temperature: 0.7
+    timeout: 30
+    max_tokens: 2048
+
+  # 重试策略（工具调用与关键决策环节）
+  retry:
+    max_attempts: 3
+    backoff_ms: 500

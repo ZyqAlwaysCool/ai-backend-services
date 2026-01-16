@@ -13,6 +13,10 @@ from typing import Dict, Any
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor
 from loguru import logger
+from bs4 import BeautifulSoup, NavigableString
+from docx import Document
+from docx.shared import Inches, Pt
+from docx.oxml.ns import qn
 
 from core.schemas.file_models import FileInfo
 from ..schemas import DocumentConvertRequest, DocumentTaskTypePrefix
@@ -991,49 +995,49 @@ class ConvertProcessor(BaseProcessor):
     async def _markdown_to_docx_advanced(self, source_path: str, file_info: FileInfo, request: DocumentConvertRequest, trace_id: str, task_id: str = None) -> str:
         """Markdown转DOCX高级实现：保持格式"""
         try:
-            import markdown2
-            from docx import Document
-            from docx.shared import Inches
-            from bs4 import BeautifulSoup
+            engine = (request.convert_options or {}).get('engine', 'default')
+            if engine not in ['default', 'pandoc']:
+                raise ValueError(f"不支持的转换引擎: {engine}，仅支持default或pandoc")
             
-            # 读取Markdown文件
-            with open(source_path, 'r', encoding='utf-8') as f:
-                md_content = f.read()
-            
-            # 转换为HTML
-            html_content = markdown2.markdown(md_content, extras=['fenced-code-blocks', 'tables'])
-            
-            # 解析HTML并转换为DOCX
-            doc = Document()
-            soup = BeautifulSoup(html_content, 'html.parser')
-            
-            # 处理HTML元素
-            for element in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'pre', 'table']):
-                if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
-                    level = int(element.name[1])
-                    doc.add_heading(element.get_text(), level=min(level, 3))
-                elif element.name == 'p':
-                    doc.add_paragraph(element.get_text())
-                elif element.name == 'pre':
-                    para = doc.add_paragraph(element.get_text())
-                    para.style = 'Normal'
-                elif element.name == 'table':
-                    self._html_table_to_docx(element, doc)
-            
-            # 生成输出文件路径
+            # 输出文件路径
             task_id = task_id or self.file_manager.generate_task_id(DocumentTaskTypePrefix.CONVERT_TASK.value)
             output_filename = f"{request.filename.rsplit('.', 1)[0]}.docx"
             output_path = self.file_manager.create_file_path(task_id, output_filename)
             
-            # 保存文档
+            if engine == 'pandoc':
+                # 直接调用pandoc做转换
+                try:
+                    import pypandoc
+                except ImportError:
+                    raise Exception("未安装pypandoc，请先安装后再使用pandoc引擎")
+                
+                pypandoc.convert_file(
+                    source_path,
+                    'docx',
+                    format='md',
+                    outputfile=output_path
+                )
+                
+                self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
+                logger.info(f"markdown→docx conversion completed via pandoc - TraceID: {trace_id} | Output: {output_filename}")
+                return output_path
+            
+            # default 引擎：走自定义解析，依赖更小
+            import markdown2
+            
+            with open(source_path, 'r', encoding='utf-8') as f:
+                md_content = f.read()
+            
+            html_content = markdown2.markdown(
+                md_content, 
+                extras=['fenced-code-blocks', 'tables', 'strike', 'task_list', 'footnotes', 'header-ids']
+            )
+            
+            doc = self._render_html_to_docx(html_content, request.convert_options)
             doc.save(output_path)
             
-            # 注册文件到文件管理器
             self.file_manager.register_file(task_id, output_filename, output_path, expire_hours=24)
-            
-            # 转换成功日志
             logger.info(f"markdown→docx conversion completed - TraceID: {trace_id} | Output: {output_filename}")
-            
             return output_path
             
         except Exception as e:
@@ -1043,26 +1047,19 @@ class ConvertProcessor(BaseProcessor):
         """Markdown转DOCX简化实现：基础格式"""
         try:
             import markdown2
-            from docx import Document
-            from bs4 import BeautifulSoup
             
             # 读取Markdown文件
             with open(source_path, 'r', encoding='utf-8') as f:
                 md_content = f.read()
             
             # 转换为HTML（基础功能）
-            html_content = markdown2.markdown(md_content)
+            html_content = markdown2.markdown(
+                md_content, 
+                extras=['fenced-code-blocks', 'tables', 'strike', 'task_list', 'footnotes']
+            )
             
-            # 解析HTML并转换为DOCX
-            doc = Document()
-            soup = BeautifulSoup(html_content, 'html.parser')
-            
-            # 简单处理HTML元素
-            for element in soup.find_all(['h1', 'h2', 'h3', 'p', 'pre']):
-                if element.name in ['h1', 'h2', 'h3']:
-                    doc.add_heading(element.get_text(), level=1)
-                elif element.name in ['p', 'pre']:
-                    doc.add_paragraph(element.get_text())
+            # 使用统一渲染器，保证列表与行内样式
+            doc = self._render_html_to_docx(html_content, request.convert_options)
             
             # 生成输出文件路径
             task_id = task_id or self.file_manager.generate_task_id(DocumentTaskTypePrefix.CONVERT_TASK.value)
@@ -1086,14 +1083,13 @@ class ConvertProcessor(BaseProcessor):
     async def _markdown_to_docx_fallback(self, source_path: str, file_info: FileInfo, request: DocumentConvertRequest, trace_id: str, task_id: str = None) -> str:
         """Markdown转DOCX基础实现：纯文本"""
         try:
-            from docx import Document
-            
             # 读取Markdown文件作为纯文本
             with open(source_path, 'r', encoding='utf-8') as f:
                 text_content = f.read()
             
             # 创建Word文档
             doc = Document()
+            self._apply_docx_base_style(doc, request.convert_options)
             doc.add_heading(f'Markdown Content: {request.filename}', 0)
             doc.add_paragraph(f'Converted: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
             doc.add_paragraph(text_content)
@@ -1117,6 +1113,142 @@ class ConvertProcessor(BaseProcessor):
         except Exception as e:
             logger.error(f"基础转换失败: {str(e)}")
             raise Exception("所有转换方法失败")
+    
+    def _render_html_to_docx(self, html_content: str, convert_options: Dict) -> Document:
+        """将HTML渲染为DOCX，保留列表和行内样式"""
+        doc = Document()
+        style_params = self._apply_docx_base_style(doc, convert_options)
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        for element in soup.contents:
+            if getattr(element, 'name', None):
+                self._process_block_element(element, doc, style_params, depth=0)
+        
+        return doc
+    
+    def _apply_docx_base_style(self, doc: Document, convert_options: Dict) -> Dict:
+        """应用基础字体、字号和行距配置"""
+        options = convert_options or {}
+        font_name = options.get('font_name', '宋体')
+        font_size = options.get('font_size', 12)
+        line_spacing = options.get('line_spacing', 1.5)
+        
+        try:
+            font_size = float(font_size)
+        except Exception:
+            font_size = 12
+        
+        try:
+            line_spacing = float(line_spacing)
+        except Exception:
+            line_spacing = 1.5
+        
+        style = doc.styles['Normal']
+        font = style.font
+        font.size = Pt(font_size)
+        self._set_font_family(font, font_name)
+        style.paragraph_format.line_spacing = line_spacing
+        
+        # 同步各级标题字体与行距（字号沿用Word默认，保持层级层次感）
+        for i in range(1, 7):
+            style_name = f'Heading {i}'
+            if style_name in doc.styles:
+                heading_style = doc.styles[style_name]
+                heading_font = heading_style.font
+                self._set_font_family(heading_font, font_name)
+                heading_style.paragraph_format.line_spacing = line_spacing
+        
+        return {
+            "font_name": font_name,
+            "font_size": font_size,
+            "line_spacing": line_spacing
+        }
+    
+    def _set_font_family(self, font, font_name: str):
+        """统一设置字体，覆盖西文/中文/复杂脚本"""
+        font.name = font_name
+        try:
+            rFonts = font.element.rPr.rFonts
+            rFonts.set(qn('w:ascii'), font_name)
+            rFonts.set(qn('w:hAnsi'), font_name)
+            rFonts.set(qn('w:eastAsia'), font_name)
+            rFonts.set(qn('w:cs'), font_name)
+        except Exception:
+            pass
+    
+    def _process_block_element(self, element, doc: Document, style_params: Dict, depth: int = 0):
+        """处理块级元素，支持标题、段落、列表、表格"""
+        tag = element.name
+        
+        if tag in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+            level = min(int(tag[1]), 3)
+            paragraph = doc.add_paragraph(style=f'Heading {level}')
+            self._append_inline_runs(paragraph, element)
+            self._apply_paragraph_format(paragraph, style_params)
+        elif tag == 'p':
+            paragraph = doc.add_paragraph()
+            self._append_inline_runs(paragraph, element)
+            self._apply_paragraph_format(paragraph, style_params)
+        elif tag in ['pre', 'code']:
+            paragraph = doc.add_paragraph()
+            run = paragraph.add_run(element.get_text())
+            run.font.name = 'Courier New'
+            self._apply_paragraph_format(paragraph, style_params)
+        elif tag == 'table':
+            self._html_table_to_docx(element, doc)
+        elif tag in ['ul', 'ol']:
+            ordered = tag == 'ol'
+            for li in element.find_all('li', recursive=False):
+                self._add_list_item(li, doc, ordered, style_params, depth)
+        else:
+            for child in element.contents:
+                if getattr(child, 'name', None):
+                    self._process_block_element(child, doc, style_params, depth)
+    
+    def _add_list_item(self, li_element, doc: Document, ordered: bool, style_params: Dict, depth: int):
+        """添加列表项，保留嵌套结构"""
+        paragraph = doc.add_paragraph(style='List Number' if ordered else 'List Bullet')
+        if depth > 0:
+            paragraph.paragraph_format.left_indent = Inches(0.25 * depth)
+        self._append_inline_runs(paragraph, li_element, skip_blocks=True)
+        self._apply_paragraph_format(paragraph, style_params)
+        
+        for child in li_element.contents:
+            if getattr(child, 'name', None) in ['ul', 'ol']:
+                self._process_block_element(child, doc, style_params, depth + 1)
+            elif getattr(child, 'name', None) == 'table':
+                self._process_block_element(child, doc, style_params, depth)
+    
+    def _append_inline_runs(self, paragraph, node, skip_blocks: bool = False):
+        """将行内元素写入段落，支持加粗、斜体和代码文本"""
+        for content in getattr(node, 'contents', []):
+            if isinstance(content, NavigableString):
+                text = str(content)
+                if text:
+                    paragraph.add_run(text)
+            elif not getattr(content, 'name', None):
+                continue
+            elif skip_blocks and content.name in ['ul', 'ol', 'table']:
+                continue
+            elif content.name in ['strong', 'b']:
+                run = paragraph.add_run(content.get_text())
+                run.bold = True
+            elif content.name in ['em', 'i']:
+                run = paragraph.add_run(content.get_text())
+                run.italic = True
+            elif content.name == 'code':
+                run = paragraph.add_run(content.get_text())
+                run.font.name = 'Courier New'
+            elif content.name == 'br':
+                paragraph.add_run("\n")
+            else:
+                self._append_inline_runs(paragraph, content, skip_blocks=skip_blocks)
+    
+    def _apply_paragraph_format(self, paragraph, style_params: Dict):
+        """统一段落行距"""
+        line_spacing = style_params.get('line_spacing')
+        if line_spacing:
+            paragraph.paragraph_format.line_spacing = line_spacing
     
     # ==================== DOCX辅助方法 ====================
     

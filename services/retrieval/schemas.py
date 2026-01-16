@@ -148,3 +148,195 @@ class KnowledgeBaseInfo(BaseModel):
 class KnowledgeBaseQueryResponse(BaseModel):
     knowledge_base_name: str = Field(..., description="知识库名称")
     knowledge_base_details: Optional[List[KnowledgeBaseInfo]] = Field([], description="知识库各版本配置信息")
+
+
+# ================== 统一知识库/文档抽象模型（Provider 通用） ==================
+class KnowledgeBaseProviderEnum(str, Enum):
+    LOCAL = "local"
+    DIFY = "dify"
+
+
+class CredentialStatusEnum(str, Enum):
+    ACTIVE = "active"
+    DELETED = "deleted"
+
+class KnowledgeBaseCreateRequest(BaseModel):
+    name: str = Field(..., description="知识库名称")
+    description: Optional[str] = Field(None, description="描述")
+    provider: KnowledgeBaseProviderEnum = Field(KnowledgeBaseProviderEnum.LOCAL, description="provider 标识")
+
+
+class KnowledgeBaseInfoExternal(BaseModel):
+    kb_name: str = Field(..., description="知识库名称")
+    provider: KnowledgeBaseProviderEnum = Field(..., description="provider 标识")
+    description: Optional[str] = Field(None, description="描述")
+    external_kb_id: Optional[str] = Field(None, description="外部平台 KB ID")
+
+
+class KnowledgeBaseListResponse(BaseModel):
+    items: List[KnowledgeBaseInfoExternal] = Field(default_factory=list)
+    page: int = 1
+    limit: int = 20
+    total: int = 0
+    has_more: bool = False
+
+
+class KnowledgeBaseDocumentCreateRequest(BaseModel):
+    input_type: str = Field(..., description="text | file")
+    doc_name: Optional[str] = Field(None, description="文档名称")
+    text: Optional[str] = Field(None, description="文本内容")
+    file_path: Optional[str] = Field(None, description="临时文件路径")
+    indexing_technique: Optional[str] = Field(None, description="索引模式")
+    process_rule: Optional[Dict[str, Any]] = Field(None, description="处理规则")
+
+
+class KnowledgeBaseDocumentUpdateRequest(KnowledgeBaseDocumentCreateRequest):
+    pass
+
+
+class KnowledgeBaseDocumentInfo(BaseModel):
+    doc_id: str = Field(..., description="文档ID（内部或外部）")
+    doc_name: str = Field(..., description="文档名称")
+    indexing_status: str = Field("", description="索引状态")
+    provider: KnowledgeBaseProviderEnum = Field(..., description="provider 标识")
+    external_batch_task_id: Optional[str] = Field(None, description="外部批次ID")
+
+
+class KnowledgeBaseDocumentListResponse(BaseModel):
+    items: List[KnowledgeBaseDocumentInfo] = Field(default_factory=list)
+    page: int = 1
+    limit: int = 20
+    total: int = 0
+    has_more: bool = False
+
+
+class KnowledgeBaseIndexStatusItem(BaseModel):
+    doc_id: str = Field(..., description="文档ID")
+    status: str = Field(..., description="索引状态")
+    completed_segments: Optional[int] = None
+    total_segments: Optional[int] = None
+    error: Optional[str] = None
+
+
+class KnowledgeBaseIndexStatusResponse(BaseModel):
+    items: List[KnowledgeBaseIndexStatusItem] = Field(default_factory=list)
+
+
+class KnowledgeBaseSegmentPayload(BaseModel):
+    content: str = Field(..., description="分段内容")
+    answer: Optional[str] = Field(None, description="答案")
+    keywords: Optional[List[str]] = Field(None, description="关键词")
+    enabled: Optional[bool] = Field(True, description="是否启用")
+
+
+class KnowledgeBaseSegmentCreateRequest(BaseModel):
+    kb_name: str = Field(..., description="知识库名称")
+    doc_name: str = Field(..., description="文档名称")
+    provider: KnowledgeBaseProviderEnum = Field(..., description="provider 标识")
+    segments: List[KnowledgeBaseSegmentPayload] = Field(..., description="分段列表")
+
+
+class KnowledgeBaseSegmentUpdateRequest(BaseModel):
+    kb_name: str = Field(..., description="知识库名称")
+    doc_name: str = Field(..., description="文档名称")
+    segment_id: str = Field(..., description="分段ID")
+    provider: KnowledgeBaseProviderEnum = Field(..., description="provider 标识")
+    segment: KnowledgeBaseSegmentPayload = Field(..., description="分段内容")
+
+
+class KnowledgeBaseSegmentDeleteRequest(BaseModel):
+    kb_name: str = Field(..., description="知识库名称")
+    doc_name: str = Field(..., description="文档名称")
+    provider: KnowledgeBaseProviderEnum = Field(..., description="provider 标识")
+    segment_id: str = Field(..., description="分段ID")
+
+
+class KnowledgeBaseSegmentInfo(BaseModel):
+    segment_id: str = Field(..., description="分段ID")
+    doc_id: str = Field(..., description="文档ID")
+    content: str = Field(..., description="内容")
+    answer: Optional[str] = None
+    enabled: bool = True
+    status: Optional[str] = None
+
+
+class KnowledgeBaseSegmentListResponse(BaseModel):
+    items: List[KnowledgeBaseSegmentInfo] = Field(default_factory=list)
+    page: int = 1
+    limit: int = 20
+    total: int = 0
+    has_more: bool = False
+
+
+class KnowledgeBaseMetadataField(BaseModel):
+    id: str
+    type: str
+    name: str
+
+
+class KnowledgeBaseMetadataListResponse(BaseModel):
+    fields: List[KnowledgeBaseMetadataField] = Field(default_factory=list)
+    built_in_field_enabled: bool = True
+
+
+class BuiltInMetadataAction(str, Enum):
+    ENABLE = "enable"
+    DISABLE = "disable"
+
+
+class KnowledgeBaseToggleBuiltInMetadataRequest(BaseModel):
+    kb_name: str = Field(..., description="知识库名称")
+    provider: KnowledgeBaseProviderEnum = Field(..., description="provider 标识")
+    action: BuiltInMetadataAction = Field(..., description="启用/禁用内置元数据，可选: enable/disable")
+
+
+class KnowledgeBaseMetadataAssignRequest(BaseModel):
+    operation_data: List[Dict[str, Any]] = Field(..., description="文档元数据赋值列表")
+
+
+class KnowledgeBaseMetadataAssignByNameRequest(BaseModel):
+    kb_name: str = Field(..., description="知识库名称")
+    provider: KnowledgeBaseProviderEnum = Field(..., description="provider 标识")
+    documents: List[Dict[str, Any]] = Field(
+        ...,
+        description="文档与元数据列表，形如 [{'doc_name': 'doc1', 'metadata_list': [{'name': 'field', 'value': 'xx'}]}]",
+    )
+
+
+class KnowledgeBaseMetadataRenameRequest(BaseModel):
+    kb_name: str = Field(..., description="知识库名称")
+    provider: KnowledgeBaseProviderEnum = Field(..., description="provider 标识")
+    old_meta_field_name: str = Field(..., description="旧的元数据字段名", min_length=1)
+    new_meta_field_name: str = Field(..., description="新的元数据字段名", min_length=1)
+
+
+class KnowledgeBaseMetadataDeleteRequest(BaseModel):
+    kb_name: str = Field(..., description="知识库名称")
+    provider: KnowledgeBaseProviderEnum = Field(..., description="provider 标识")
+    meta_field_name: str = Field(..., description="待删除的元数据字段名", min_length=1)
+
+
+# ================ 凭证管理模型 =================
+class KBCredentialCreateRequest(BaseModel):
+    provider: KnowledgeBaseProviderEnum = Field(KnowledgeBaseProviderEnum.DIFY, description="provider 标识，如 dify")
+    name: str = Field(..., description="凭证名称")
+    api_key: str = Field(..., description="API Key")
+    workspace_id: Optional[str] = Field(None, description="可选 workspace id")
+    is_default: bool = Field(False, description="是否默认")
+    description: Optional[str] = Field(None, description="备注")
+
+
+class KBCredentialInfo(BaseModel):
+    provider: KnowledgeBaseProviderEnum
+    name: str
+    workspace_id: Optional[str] = None
+    is_default: bool = False
+    status: str = "active"
+    description: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    api_key: Optional[str] = None
+
+
+class KBCredentialListResponse(BaseModel):
+    items: List[KBCredentialInfo] = Field(default_factory=list)

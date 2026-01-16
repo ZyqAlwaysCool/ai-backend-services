@@ -2,19 +2,19 @@
 ###
  # @Description: 
  # @Author: zyq
- # @Date: 2026-01-16 16:07:17
+ # @Date: 2025-11-12 09:45:49
  # @LastEditors: zyq
- # @LastEditTime: 2026-01-16 16:09:05
+ # @LastEditTime: 2025-12-18 16:45:01
 ### 
 
 # AI Backend Service 启动脚本
 
 # 设置环境变量
-export DIFY_URL=http://{your_dify_ip}/v1
+export DIFY_URL=http://host:port/v1
 
 # 检查是否已经有服务在运行
-if pgrep -f "python -m app" > /dev/null; then
-    echo "服务已在运行中，PID: $(pgrep -f 'python -m app')"
+if pgrep -f "uv run python -m app" > /dev/null; then
+    echo "服务已在运行中，PID: $(pgrep -f 'uv run python -m app')"
     exit 1
 fi
 
